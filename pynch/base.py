@@ -84,17 +84,6 @@ class Field(Serializable):
         pass
 
 
-class SimpleType(object):
-    @classmethod
-    def validate(cls, value):
-        return value
-
-
-class ComplexType(object):
-    def validate(self, value):
-        return value
-
-
 class InformationDescriptor(object):
     """
     class Book(Model):
