@@ -14,29 +14,20 @@ class Serializable(object):
     def _to_python(self, value):
         raise DelegationException('Define in subclass')
 
-    @abstractmethod
-    def __fromson__(self, mongo):
-        raise DelegationException('Define in subclass')
 
-    @abstractmethod
-    def __toson__(self):
-        raise DelegationException('Define in subclass')
-
-
-class BaseField(Serializable):
+class Field(Serializable):
     def __init__(self, db_field=None, required=False, default=None,
                  unique=False, unique_with=None, primary_key=False,
-                 validator=None, choices=None, verbose_name=None,
-                 help_text=None):
+                 choices=None, verbose_name=None, help_text=None):
         """
         Base class for all field types. Fields are descriptors that
         manage the validation and typing of a document's attributes.
 
-        Fields whose name starts with a leading underscore are
-        "hidden".  These fields are still serializable but are not
-        available through `.info.fields`, and must be explicitly
-        dealt with.
+        Fields whose name starts with a leading underscore are "hidden"
+        These fields are not available through `.info.fields` and must
+        be explicitly dealt with (the only exception is `_id`)
         """
+        super(Field, self).__init__()
         self.db_field = db_field if not primary_key else '_id'
         self.required = required
         self.default = default
@@ -46,15 +37,17 @@ class BaseField(Serializable):
         self.choices = choices
         self.verbose_name = verbose_name
         self.help_text = help_text
-        # validator must return an instance of the validated data
-        self.validator = validator if validator else lambda value: value
 
-    def __call__(self, name):
+    def __call__(self, name, model):
         """
-        Lipstick to avoid having to retype a field's name as an argument to
-        its constructor. Invoked by ModelMetaclass.
+        Called by ModelMetaclass.
+
+        Lipstick to avoid having to retype `name` into the field's
+        constructor. Also allows us to pass in the model which owns
+        the field.
         """
         self.name = name
+        self.model = model
         return self
 
     def __get__(self, document, model=None):
@@ -69,7 +62,7 @@ class BaseField(Serializable):
             raise AttributeError
 
     def __set__(self, document, value):
-        document.__dict__[self.name] = self.validator(value)
+        document.__dict__[self.name] = self.validate(value)
 
     def __delete__(self, document):
         # must convert KeyErrors to AttributeErrors
@@ -81,11 +74,25 @@ class BaseField(Serializable):
     def __str__(self):
         return self.name if hasattr(self, 'name') else self.db_field
 
-    def __fromson__(self, mongo):
+    def validate(self, data):
+        raise DelegationException('Define in a subclass')
+
+    def _to_python(self, data):
         pass
 
-    def __toson__(self):
+    def _to_mongo(self, document):
         pass
+
+
+class SimpleType(object):
+    @classmethod
+    def validate(cls, value):
+        return value
+
+
+class ComplexType(object):
+    def validate(self, value):
+        return value
 
 
 class InformationDescriptor(object):
@@ -112,6 +119,9 @@ class InformationDescriptor(object):
         self.backrefs = {}
 
     def __get__(self, document, model=None):
+        if model is None:
+            raise Exception('Can only access through a model'
+                            ', not a document model instance')
         return self
 
     def __set__(self, document, value):
@@ -122,7 +132,7 @@ class InformationDescriptor(object):
         # remember that fields with a leading underscore are "hidden"
         # unless the field's name is `_id`
         return [v for k, v in self.model.__dict__.items() \
-                    if isinstance(v, BaseField) and \
+                    if isinstance(v, Field) and \
                         (not k.startswith('_') or k is '_id')]
 
     @property
@@ -135,10 +145,10 @@ class ModelMetaclass(ABCMeta):
         """
         For simplicity we disallow multiple inheritance among Models.
 
-        Because we'd like to use Serializable (which is an abc) as the
-        base class for both fields and models -- and -- because we need
-        a custom metaclass for models, ModelMetaclass must subclass
-        ABCMeta if we want to avoid a metaclass conflict.
+        Because we'd like to use Serializable (which is a MongoType) as the
+        base class for both Fields and Models -- and -- because we need a
+        custom metaclass for Models, ModelMetaclass must subclass MongoType
+        if we want to avoid a metaclass conflict.
 
         Notice, that a subclass's _meta attribute inherits from its
         bases.  In other words, _meta attributes "stack".
@@ -159,6 +169,7 @@ class ModelMetaclass(ABCMeta):
         index      := [fieldname, ...] (default = [])
         collection := True | False     (default = True)
         max_size   := integer          (default = 100000 bytes)
+        database   := string           (default = '')
         """
         if len(bases) > 1:
             raise InheritanceException(
@@ -178,21 +189,14 @@ class ModelMetaclass(ABCMeta):
         # the new class's __dict__
         namespace.update(attrs)
 
-        for fieldname, field in namespace.items():
-            # initialize descriptors by calling them with the correct name
-            if isinstance(field, BaseField):
-                namespace[fieldname] = field(fieldname)
-            else:
-                namespace[fieldname] = field
-
         return ABCMeta.__new__(meta, name, bases, namespace)
 
     def __init__(model, name, bases, attrs):
         # Necessary so that field descriptors can determine what classes
         # they are attached to.
-        for field in attrs.values():
-            if isinstance(field, BaseField):
-                field.model = model
+        for fieldname, field in attrs.items():
+            if isinstance(field, Field):
+                field(fieldname, model)
 
         # information descriptor allows class level access to orm functionality
         model._info = InformationDescriptor(model)
@@ -204,19 +208,27 @@ class Model(Serializable):
     __metaclass__ = ModelMetaclass
 
     def __init__(self, **values):
+        super(Model, self).__init__()
+
         # setattr must be called to activate the descriptors,
         # rather than update the document's __dict__ directly
         for k, v in values.items():
             setattr(self, k, v)
 
-    def _to_mongo(self, value):
+    @classmethod
+    def _to_mongo(cls, document):
+        mongo = {}
+        for field in cls._info.fields:
+            mongo[field.name] = \
+                field._to_mongo(getattr(document, field.name))
+        return mongo
+
+    @classmethod
+    def _to_python(cls, value):
         pass
 
-    def _to_python(self, value):
-        pass
-
-    def __fromson__(self, mongo):
-        pass
-
-    def __toson__(self):
-        pass
+    def validate(self):
+        if all([field.validate(getattr(self, field.name)) \
+                    for field in self.__class__._info.fields]):
+            return self
+        raise Exception('Validation failure')

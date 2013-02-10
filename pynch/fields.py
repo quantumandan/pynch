@@ -1,16 +1,42 @@
-from base import BaseField, Model
-import re
-import decimal
+from base import Field, Model
+from bson.dbref import DBRef
+import types
+import collections
 
 
-class DynamicField(BaseField):
+class DynamicField(Field):
     """
     Marker class for fields that can take data of any type.
     """
     pass
 
 
-class ListField(BaseField):
+class ComplexField(Field):
+    """
+    Container type field. Can pass in either a instance of a
+    field or a reference to an existing model.
+
+    Container elements must all be of the same type.
+    """
+    def __init__(self, field=None, **params):
+        super(ComplexField, self).__init__(**params)
+        # a reference to the type of each element in the field
+        self.field = field if field else DynamicField()
+
+    def __call__(self, name, model):
+        super(ComplexField, self).__call__(name, model)
+        if isinstance(self.field, ReferenceField):
+            self.field(name, self.field.reference)
+        if isinstance(self.field, DynamicField):
+            self.field(name, Model)
+        return self
+
+    def is_dynamic(self):
+        # is dynamic if contents of the DictField are untyped
+        return isinstance(self.field, DynamicField)
+
+
+class ListField(ComplexField):
     """
     All normal list operations are available. Note that order is preserved.
 
@@ -28,18 +54,6 @@ class ListField(BaseField):
     >>> print garden.pop(0)
     Rose
     """
-
-    def __init__(self, field=None, **params):
-        # get rid of validator if any, we want to hard code one
-        params.pop('validator', None)
-        # all other parameters are a go
-        super(ListField, self).__init__(**params)
-        # a reference to the type of each element in the field
-        self.field_type = field if field else DynamicField
-        # wrap a list comprehension in a lambda fcn
-        self.validator = lambda lst: \
-            [self.field_type.validator(x) for x in lst]
-
     def __set__(self, document, value):
         assert isinstance(value, list)
         # remember that `self.validator(...)` returns a list
@@ -49,57 +63,59 @@ class ListField(BaseField):
         super(ListField, self).__set__(document, value)
 
     def _to_mongo(self, document):
-        return [self.field_type._to_mongo(document, x) \
+        return [self.field._to_mongo(x) \
                     for x in document.__dict__[self.name]]
 
     def _to_python(self, document):
-        return [self.field_type._to_python(document, x) \
+        return [self.field._to_python(x) \
                     for x in document.__dict__[self.name]]
 
-    def is_dynamic(self):
-        # is dynamic if contents of the ListField are untyped
-        return issubclass(self.field_type, DynamicField)
+    def validate(self, lst):
+        return [self.field.validate(x) for x in lst]
 
 
-class DictField(BaseField):
+class DictField(ComplexField):
     """
     Almost identical to a ListField. All normal dict operations
     are available.
     """
-
-    def __init__(self, field=None, **params):
-        # get rid of validator if any, we want to hard code one
-        params.pop('validator', None)
-        # all other parameters are a go
-        super(DictField, self).__init__(**params)
-        # a reference to the type of each element in the field
-        self.field_type = field if field else DynamicField
-        # wrap a dict comprehension in a lambda fcn
-        self.validator = lambda dct: \
-            dict((k, self.field_type.validator(v)) for k, v in dct.items())
-
     def __set__(self, document, value):
         assert isinstance(value, dict)
-        # remember that `self.validator(...)` returns a dict
-        # of validated field values, but its the super class's
-        # responsibility to call the actual validator and
-        # set the resulting dict in the document's dictionary
         super(DictField, self).__set__(document, value)
 
     def _to_mongo(self, document):
-        return dict((k, self.field_type._to_mongo(document, v)) \
+        return dict((k, self.field._to_mongo(v)) \
                     for k, v in document.__dict__[self.name].items())
 
     def _to_python(self, document):
-        return dict((k, self.field_type._to_python(document, v)) \
+        return dict((k, self.field._to_python(v)) \
                     for k, v in document.__dict__[self.name].items())
 
-    def is_dynamic(self):
-        # is dynamic if contents of the DictField are untyped
-        return issubclass(self.field_type, DynamicField)
+    def validate(self, dct):
+        return dict((k, self.field.validate(v)) for k, v in dct.items())
 
 
-class ReferenceField(BaseField):
+class GeneratorField(ComplexField):
+    """
+    Same as a ListField but with generators instead
+    """
+    def __set__(self, document, value):
+        assert isinstance(value, (types.GeneratorType, collections.Iterator))
+        super(GeneratorField, self).__set__(document, value)
+
+    def _to_mongo(self, document):
+        return [self.field._to_mongo(x) \
+                    for x in document.__dict__[self.name]]
+
+    def _to_python(self, document):
+        return (self.field._to_python(x) \
+                    for x in document.__dict__[self.name])
+
+    def validate(self, gen):
+        return [self.field.validate(x) for x in gen]
+
+
+class ReferenceField(Field):
     """
     class Gardener(Model):
         name = StringField(required=True)
@@ -129,29 +145,48 @@ class ReferenceField(BaseField):
         super(ReferenceField, self).__init__(**params)
         self.reference = reference
 
-    def __call__(self, name):
+    def __call__(self, name, model):
+        super(ReferenceField, self).__call__(name, model)
         # rebind reference with an actual class if reference is
         # a fully qualified import path (str) or is 'self'
         if isinstance(self.reference, basestring):
             self.reference = self.model if \
                 'self' == self.reference else __import__(self.reference)
 
-        # right now, only allow references to documents
-        assert isinstance(self.reference, Model)
+        # only allow references to documents
+        assert issubclass(self.reference, Model)
 
         # collect backrefs in a set
         self.reference._info.backrefs.setdefault(
                         self.name, set()).add(self.model)
 
-        return super(ReferenceField, self).__call__(name)
+        return self
 
     def __delete__(self, document):
         self.reference._info.backrefs[self.name].remove(self.model)
         super(ReferenceField, self).__delete__(document)
 
+    def _to_python(self, mongo):
+        pass
 
-class StringField(BaseField):
-    pass
+    def _to_mongo(self, document):
+        return DBRef(self.reference.__name__, document.db_field,
+                     database=self.reference._meta.database)
+
+    def validate(self, data):
+        assert isinstance(data, self.reference)
+        return data
+
+
+class StringField(Field):
+    def validate(self, value):
+        assert isinstance(value, basestring)
+        return value
+
+    def _to_mongo(self, value):
+        return unicode(value)
+
+    _to_python = _to_mongo
 
 
 class URLField(StringField):
@@ -162,31 +197,56 @@ class EmailField(StringField):
     pass
 
 
-class IntegerField(BaseField):
+class IntegerField(Field):
+    def validate(self, value):
+        assert isinstance(value, int)
+        return value
+
+    def _to_mongo(self, value):
+        return int(value)
+
+    _to_python = _to_mongo
+
+
+class FloatField(Field):
+    def validate(self, value):
+        assert isinstance(value, float)
+        return value
+
+    def _to_mongo(self, value):
+        return float(value)
+
+    _to_python = _to_mongo
+
+
+class DecimalField(Field):
+    def _to_python(self, value):
+        pass
+
+    def _to_mongo(self, value):
+        pass
+
+
+class BooleanField(Field):
+    def validate(self, value):
+        assert isinstance(value, bool)
+        return value
+
+    def _to_mongo(self, value):
+        return bool(value)
+
+    _to_python = _to_mongo
+
+
+class DateTimeField(Field):
     pass
 
 
-class FloatField(BaseField):
+class BinaryField(Field):
     pass
 
 
-class DecimalField(BaseField):
-    pass
-
-
-class BooleanField(BaseField):
-    pass
-
-
-class DateTimeField(BaseField):
-    pass
-
-
-class BinaryField(BaseField):
-    pass
-
-
-class FileField(BaseField):
+class FileField(Field):
     pass
 
 
@@ -194,13 +254,9 @@ class ImageField(FileField):
     pass
 
 
-class GeoPointField(BaseField):
+class GeoPointField(Field):
     pass
 
 
-class SequenceField(IntegerField):
-    pass
-
-
-class UUIDField(BaseField):
+class UUIDField(Field):
     pass
