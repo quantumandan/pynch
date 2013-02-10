@@ -4,5 +4,5 @@ class InheritanceException(TypeError):
     pass
 
 
-class DelegationException(InheritanceException, NotImplementedError):
+class DelegationException(InheritanceException):
     pass

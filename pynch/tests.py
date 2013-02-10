@@ -29,6 +29,23 @@ class PynchTestSuite(unittest.TestCase):
         self.Garden = Garden
         self.Flower = Flower
 
+    def test_this(self):
+        jones = self.Gardener(name='Mr. Jones')
+        me = self.Gardener(name='Jim', instructor=jones)
+        stomper = self.BugStomper(stomper=jones, number_squashed=0)
+        garden = self.Garden(gardener=me)
+        garden.flowers = [self.Flower(name='rose'), self.Flower(name='daisy')]
+        class Phoo(Model):
+            bliss = ListField(ReferenceField(self.Gardener))
+            hell = ListField(StringField())
+        # garden.flowers.append(1)
+        # self.Garden.validate(garden)
+        p = Phoo()
+        p.bliss = []
+        p.bliss.append(me)
+        p.hell = []
+        p.hell.append('1')
+        p.validate()
 
 if __name__ == '__main__':
     unittest.main()
