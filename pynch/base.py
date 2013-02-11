@@ -243,7 +243,7 @@ class Model(Serializable):
 
         # return the document instance on success (when all values
         # in exceptions are None)
-        if all(None is value for value in exceptions.values()):
+        if all(value is None for value in exceptions.values()):
             return self
 
         # get rid of false positives (ie when the document has both

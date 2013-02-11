@@ -37,12 +37,12 @@ class ComplexField(Field):
         self.field = field if field else DynamicField()
 
     def __call__(self, name, model):
+        if isinstance(self.field, SimpleField):
+            self.field(name, model)
         if isinstance(self.field, ReferenceField):
             self.field(name, self.field.reference)
         if isinstance(self.field, DynamicField):
             self.field(name, Model)
-        if isinstance(self.field, SimpleField):
-            self.field(name, model)
         return super(ComplexField, self).__call__(name, model)
 
     def is_dynamic(self):
