@@ -29,6 +29,35 @@ class PynchTestSuite(unittest.TestCase):
         self.Garden = Garden
         self.Flower = Flower
 
+    def test_required(self):
+        pass
+
+    def test_unique_with(self):
+        pass
+
+    def test_referencefield(self):
+        pass
+
+    def test_listfield(self):
+        pass
+
+    def test_dictfield(self):
+        pass
+
+    def test_generatorfield(self):
+        pass
+
+    def test_stringfield(self):
+        pass
+
+    def test_integerfield(self):
+        pass
+
+    def test_floatfield(self):
+        pass
+
+
+
     def test_this(self):
         jones = self.Gardener(name='Mr. Jones')
         me = self.Gardener(name='Jim', instructor=jones)

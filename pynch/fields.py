@@ -7,8 +7,16 @@ import collections
 class DynamicField(Field):
     """
     Marker class for fields that can take data of any type.
+    Does no validation.
     """
-    pass
+    def _to_mongo(self, data):
+        return data
+
+    def _to_python(self, data):
+        return data
+
+    def validate(self, data):
+        return data
 
 
 class ComplexField(Field):
@@ -24,12 +32,11 @@ class ComplexField(Field):
         self.field = field if field else DynamicField()
 
     def __call__(self, name, model):
-        super(ComplexField, self).__call__(name, model)
         if isinstance(self.field, ReferenceField):
             self.field(name, self.field.reference)
         if isinstance(self.field, DynamicField):
             self.field(name, Model)
-        return self
+        return super(ComplexField, self).__call__(name, model)
 
     def is_dynamic(self):
         # is dynamic if contents of the DictField are untyped
@@ -56,10 +63,6 @@ class ListField(ComplexField):
     """
     def __set__(self, document, value):
         assert isinstance(value, list)
-        # remember that `self.validator(...)` returns a list
-        # of validated field values, but its the super class's
-        # responsibility to call the actual validator and
-        # set the resulting list in the document's dictionary
         super(ListField, self).__set__(document, value)
 
     def _to_mongo(self, document):
@@ -112,7 +115,7 @@ class GeneratorField(ComplexField):
                     for x in document.__dict__[self.name])
 
     def validate(self, gen):
-        return [self.field.validate(x) for x in gen]
+        return (self.field.validate(x) for x in gen)
 
 
 class ReferenceField(Field):

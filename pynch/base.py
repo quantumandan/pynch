@@ -14,6 +14,10 @@ class Serializable(object):
     def _to_python(self, value):
         raise DelegationException('Define in subclass')
 
+    @abstractmethod
+    def validate(self, *args, **kwargs):
+        raise DelegationException('Define in subclass')
+
 
 class Field(Serializable):
     def __init__(self, db_field=None, required=False, default=None,
@@ -167,8 +171,11 @@ class ModelMetaclass(ABCMeta):
         # convert dictproxy to a dict
         base_attrs = dict(bases[0].__dict__)
 
+        _meta = {'index': [], 'collection': True,
+                 'max_size': 10000, 'database': ''}
+
         # pull out meta modifier, then merge with that of current class
-        _meta = base_attrs.pop('_meta', {})
+        _meta.update(base_attrs.pop('_meta', {}))
         _meta.update(attrs.pop('_meta', {}))
 
         # initialize namespace with newly updated _meta
@@ -198,7 +205,6 @@ class Model(Serializable):
 
     def __init__(self, **values):
         super(Model, self).__init__()
-
         # setattr must be called to activate the descriptors,
         # rather than update the document's __dict__ directly
         for k, v in values.items():
