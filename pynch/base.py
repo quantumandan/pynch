@@ -139,10 +139,10 @@ class ModelMetaclass(ABCMeta):
         """
         For simplicity we disallow multiple inheritance among Models.
 
-        Because we'd like to use Serializable (which is a MongoType) as the
-        base class for both Fields and Models -- and -- because we need a
-        custom metaclass for Models, ModelMetaclass must subclass MongoType
-        if we want to avoid a metaclass conflict.
+        Because we'd like to use Serializable as the base class for both
+        Fields and Models -- and -- because we need a custom metaclass for
+        Models, ModelMetaclass must subclass ABCMeta if we want to avoid a
+        metaclass conflict.
 
         Notice, that a subclass's _meta attribute inherits from its
         bases.  In other words, _meta attributes "stack".
