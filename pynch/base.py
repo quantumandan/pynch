@@ -1,6 +1,7 @@
 from abc import ABCMeta, abstractmethod
 from query import QueryManager
-from errors import DelegationException, InheritanceException
+from errors import (DelegationException, InheritanceException,
+                    ValidationException, DocumentValidationException)
 
 
 class Serializable(object):
@@ -223,7 +224,15 @@ class Model(Serializable):
         pass
 
     def validate(self):
-        if all([field.validate(getattr(self, field.name)) \
-                    for field in self.__class__._info.fields]):
+        exceptions = {}
+        for field in self.__class__._info.fields:
+            try:
+                field.validate(getattr(self, field.name))
+            except ValidationException as e:
+                exceptions[field.name] = e
+
+        if not exceptions:
             return self
-        raise Exception('Validation failure')
+
+        raise DocumentValidationException(
+            'Document failed to validate', **exceptions)

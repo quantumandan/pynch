@@ -71,9 +71,9 @@ class PynchTestSuite(unittest.TestCase):
         # self.Garden.validate(garden)
         p = Phoo()
         p.bliss = []
-        p.bliss.append(me)
+        p.bliss.append('me')
         p.hell = []
-        p.hell.append('1')
+        p.hell.append(1)
         p.validate()
 
 if __name__ == '__main__':

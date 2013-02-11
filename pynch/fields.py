@@ -2,6 +2,7 @@ from base import Field, Model
 from bson.dbref import DBRef
 import types
 import collections
+from errors import ValidationException
 
 
 class DynamicField(Field):
@@ -21,7 +22,7 @@ class DynamicField(Field):
 
 class ComplexField(Field):
     """
-    Container type field. Can pass in either a instance of a
+    Container type field. Can pass in either an instance of a
     field or a reference to an existing model.
 
     Container elements must all be of the same type.
@@ -176,14 +177,23 @@ class ReferenceField(Field):
         return DBRef(self.reference.__name__, document.db_field,
                      database=self.reference._meta.database)
 
-    def validate(self, data):
-        assert isinstance(data, self.reference)
-        return data
+    def validate(self, value):
+        try:
+            assert isinstance(value, self.reference)
+        except AssertionError:
+            raise ValidationException(
+                'Value is of type %s but should be %s' \
+                    % (type(value), self.reference))
+        return value
 
 
 class StringField(Field):
     def validate(self, value):
-        assert isinstance(value, basestring)
+        try:
+            assert isinstance(value, basestring)
+        except AssertionError:
+            raise ValidationException(
+                'Value is of type %s but should be basestring' % type(value))
         return value
 
     def _to_mongo(self, value):
@@ -202,7 +212,11 @@ class EmailField(StringField):
 
 class IntegerField(Field):
     def validate(self, value):
-        assert isinstance(value, int)
+        try:
+            assert isinstance(value, int)
+        except AssertionError:
+            raise ValidationException(
+                'Value is of type %s but should be int' % type(value))
         return value
 
     def _to_mongo(self, value):
@@ -213,7 +227,11 @@ class IntegerField(Field):
 
 class FloatField(Field):
     def validate(self, value):
-        assert isinstance(value, float)
+        try:
+            assert isinstance(value, float)
+        except AssertionError:
+            raise ValidationException(
+                'Value is of type %s but should be float' % type(value))
         return value
 
     def _to_mongo(self, value):
