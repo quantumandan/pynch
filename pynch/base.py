@@ -113,9 +113,9 @@ class InformationDescriptor(object):
         self.backrefs = {}
 
     def __get__(self, document, model=None):
-        if model is None:
-            raise Exception('Can only access through a model'
-                            ', not a document model instance')
+        # if model is None:
+        #     raise Exception('Can only access through a model'
+        #                     ', not a document model instance')
         return self
 
     def __set__(self, document, value):
@@ -211,45 +211,42 @@ class Model(Serializable):
         for k, v in values.items():
             setattr(self, k, v)
 
+    @property
+    def pk(self):
+        for field in self._info.fields:
+            if field.primary_key:
+                return getattr(self, field.name)
+        return None
+
     def _to_mongo(self):
-        fields = self.__class__._info.fields
+        fields = self._info.fields
         # build a mongo compatible dictionary
         mongo = dict((field.name, field._to_mongo(
                         getattr(self, field.name))) for field in fields)
         return mongo
 
-    @classmethod
     def _to_python(cls, mongo):
         pass
 
     def validate(self):
-        fields = self.__class__._info.fields
-
-        # because I don't like loops...
-        def check(field):
-            # validate the field, if failure occurs then
-            # return a tuple containing the name and exception
-            try:
-                # delegate validation to the document's fields
-                field.validate(getattr(self, field.name))
-                # None value is a marker
-                return (field.name, None)
-            except ValidationException as e:
-                # otherwise set the value to the exception
-                return (field.name, e)
+        # validate the field, if failure occurs then
+        # yield a tuple containing the name and exception
+        def check_fields(fields):
+            for field in fields:
+                try:
+                    # delegate validation to the document's fields
+                    field.validate(getattr(self, field.name))
+                except ValidationException as e:
+                    # otherwise set the value to the exception
+                    yield (field.name, e)
 
         # validate fields, collecting exceptions in a dictionary
-        exceptions = dict(check(field) for field in fields)
+        exceptions = dict(check_fields(self._info.fields))
 
-        # return the document instance on success (when all values
-        # in exceptions are None)
-        if all(value is None for value in exceptions.values()):
+        # return the document instance on success
+        # (ie exceptions is empty)
+        if not exceptions:
             return self
-
-        # get rid of false positives (ie when the document has both
-        # valid and invalid fields attached to it)
-        [exceptions.__delitem__(k) for k, v \
-                    in exceptions.items() if v is None]
 
         # traceback provides a detailed breakdown of a document's
         # validation errors by field

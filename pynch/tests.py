@@ -75,6 +75,7 @@ class PynchTestSuite(unittest.TestCase):
         p.hell = []
         p.hell.append(1)
         p.validate()
+        # print p._to_mongo()
 
 if __name__ == '__main__':
     unittest.main()

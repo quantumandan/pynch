@@ -1,14 +1,13 @@
 from base import Field, Model
 from bson.dbref import DBRef
 import types
-import collections
 from errors import ValidationException
 
 
 class DynamicField(Field):
     """
-    Marker class for fields that can take data of any type.
-    Does no validation.
+    Marker class for fields that can take data of
+    any type. Does no validation.
     """
     def _to_mongo(self, data):
         return data
@@ -21,15 +20,21 @@ class DynamicField(Field):
 
 
 class SimpleField(Field):
+    """
+    Marker class for fields that can take data of
+    any simple type (ie not a container type). Does
+    no validation.
+    """
     pass
 
 
 class ComplexField(Field):
     """
-    Container type field. Can pass in either an instance of a
+    Container field type. Can pass in either an instance of a
     field or a reference to an existing model.
 
-    Container elements must all be of the same type.
+    The container elements must all be of the same type, unless
+    the underlying field type is dynamic.
     """
     def __init__(self, field=None, **params):
         super(ComplexField, self).__init__(**params)
@@ -39,10 +44,10 @@ class ComplexField(Field):
     def __call__(self, name, model):
         if isinstance(self.field, SimpleField):
             self.field(name, model)
-        if isinstance(self.field, ReferenceField):
-            self.field(name, self.field.reference)
         if isinstance(self.field, DynamicField):
             self.field(name, Model)
+        if isinstance(self.field, ReferenceField):
+            self.field(name, self.field.reference)
         return super(ComplexField, self).__call__(name, model)
 
     def is_dynamic(self):
@@ -72,9 +77,8 @@ class ListField(ComplexField):
         assert isinstance(value, list)
         super(ListField, self).__set__(document, value)
 
-    def _to_mongo(self, document):
-        return [self.field._to_mongo(x) \
-                    for x in document.__dict__[self.name]]
+    def _to_mongo(self, lst):
+        return [self.field._to_mongo(x) for x in lst]
 
     def _to_python(self, document):
         return [self.field._to_python(x) \
@@ -110,7 +114,7 @@ class GeneratorField(ComplexField):
     Same as a ListField but with generators instead
     """
     def __set__(self, document, value):
-        assert isinstance(value, (types.GeneratorType, collections.Iterator))
+        assert isinstance(value, types.GeneratorType)
         super(GeneratorField, self).__set__(document, value)
 
     def _to_mongo(self, document):
@@ -180,27 +184,26 @@ class ReferenceField(Field):
         pass
 
     def _to_mongo(self, document):
-        return DBRef(self.reference.__name__, document.db_field,
+        return DBRef(self.reference.__name__, document.pk.name,
                      database=self.reference._meta.database)
 
     def validate(self, value):
-        try:
-            assert isinstance(value, self.reference)
-        except AssertionError:
-            raise ValidationException(
-                'Value is of type %s but should be %s' \
-                    % (type(value), self.reference))
-        return value
+        if isinstance(value, self.reference):
+            return value
+
+        raise ValidationException(
+            'value is of type %s but should be %s' \
+                % (type(value), self.reference))
 
 
 class StringField(SimpleField):
     def validate(self, value):
-        try:
-            assert isinstance(value, basestring)
-        except AssertionError:
-            raise ValidationException(
-                'Value is of type %s but should be basestring' % type(value))
-        return value
+        if isinstance(value, basestring):
+            return value
+
+        raise ValidationException(
+            'value is of type %s but should be %s' \
+                % (type(value), basestring))
 
     def _to_mongo(self, value):
         return unicode(value)
@@ -218,12 +221,12 @@ class EmailField(StringField):
 
 class IntegerField(SimpleField):
     def validate(self, value):
-        try:
-            assert isinstance(value, int)
-        except AssertionError:
-            raise ValidationException(
-                'Value is of type %s but should be int' % type(value))
-        return value
+        if isinstance(value, int):
+            return value
+
+        raise ValidationException(
+            'value is of type %s but should be %s' \
+                % (type(value), bool))
 
     def _to_mongo(self, value):
         return int(value)
@@ -233,12 +236,12 @@ class IntegerField(SimpleField):
 
 class FloatField(SimpleField):
     def validate(self, value):
-        try:
-            assert isinstance(value, float)
-        except AssertionError:
-            raise ValidationException(
-                'Value is of type %s but should be float' % type(value))
-        return value
+        if isinstance(value, float):
+            return value
+
+        raise ValidationException(
+            'value is of type %s but should be %s' \
+                % (type(value), float))
 
     def _to_mongo(self, value):
         return float(value)
@@ -256,8 +259,12 @@ class DecimalField(SimpleField):
 
 class BooleanField(SimpleField):
     def validate(self, value):
-        assert isinstance(value, bool)
-        return value
+        if isinstance(value, bool):
+            return value
+
+        raise ValidationException(
+            'value is of type %s but should be %s' \
+                % (type(value), bool))
 
     def _to_mongo(self, value):
         return bool(value)
