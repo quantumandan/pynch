@@ -20,6 +20,10 @@ class DynamicField(Field):
         return data
 
 
+class SimpleField(Field):
+    pass
+
+
 class ComplexField(Field):
     """
     Container type field. Can pass in either an instance of a
@@ -37,6 +41,8 @@ class ComplexField(Field):
             self.field(name, self.field.reference)
         if isinstance(self.field, DynamicField):
             self.field(name, Model)
+        if isinstance(self.field, SimpleField):
+            self.field(name, model)
         return super(ComplexField, self).__call__(name, model)
 
     def is_dynamic(self):
@@ -187,7 +193,7 @@ class ReferenceField(Field):
         return value
 
 
-class StringField(Field):
+class StringField(SimpleField):
     def validate(self, value):
         try:
             assert isinstance(value, basestring)
@@ -210,7 +216,7 @@ class EmailField(StringField):
     pass
 
 
-class IntegerField(Field):
+class IntegerField(SimpleField):
     def validate(self, value):
         try:
             assert isinstance(value, int)
@@ -225,7 +231,7 @@ class IntegerField(Field):
     _to_python = _to_mongo
 
 
-class FloatField(Field):
+class FloatField(SimpleField):
     def validate(self, value):
         try:
             assert isinstance(value, float)
@@ -240,7 +246,7 @@ class FloatField(Field):
     _to_python = _to_mongo
 
 
-class DecimalField(Field):
+class DecimalField(SimpleField):
     def _to_python(self, value):
         pass
 
@@ -248,7 +254,7 @@ class DecimalField(Field):
         pass
 
 
-class BooleanField(Field):
+class BooleanField(SimpleField):
     def validate(self, value):
         assert isinstance(value, bool)
         return value
@@ -259,15 +265,15 @@ class BooleanField(Field):
     _to_python = _to_mongo
 
 
-class DateTimeField(Field):
+class DateTimeField(SimpleField):
     pass
 
 
-class BinaryField(Field):
+class BinaryField(SimpleField):
     pass
 
 
-class FileField(Field):
+class FileField(SimpleField):
     pass
 
 
@@ -275,9 +281,9 @@ class ImageField(FileField):
     pass
 
 
-class GeoPointField(Field):
+class GeoPointField(SimpleField):
     pass
 
 
-class UUIDField(Field):
+class UUIDField(SimpleField):
     pass

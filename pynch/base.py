@@ -79,14 +79,14 @@ class Field(Serializable):
     def __str__(self):
         return self.name if hasattr(self, 'name') else self.db_field
 
-    def validate(self, data):
-        raise DelegationException('Define in a subclass')
-
     def _to_python(self, data):
         pass
 
     def _to_mongo(self, document):
         pass
+
+    def validate(self, *args, **kwargs):
+        raise DelegationException('Define in subclass')
 
 
 class InformationDescriptor(object):
@@ -167,7 +167,7 @@ class ModelMetaclass(ABCMeta):
         """
         if len(bases) > 1:
             raise InheritanceException(
-                'Multiple inheritance not allowed in this version')
+                'Multiple inheritance not allowed')
 
         # convert dictproxy to a dict
         base_attrs = dict(bases[0].__dict__)
@@ -211,28 +211,47 @@ class Model(Serializable):
         for k, v in values.items():
             setattr(self, k, v)
 
-    @classmethod
-    def _to_mongo(cls, document):
-        mongo = {}
-        for field in cls._info.fields:
-            mongo[field.name] = \
-                field._to_mongo(getattr(document, field.name))
+    def _to_mongo(self):
+        fields = self.__class__._info.fields
+        # build a mongo compatible dictionary
+        mongo = dict((field.name, field._to_mongo(
+                        getattr(self, field.name))) for field in fields)
         return mongo
 
     @classmethod
-    def _to_python(cls, value):
+    def _to_python(cls, mongo):
         pass
 
     def validate(self):
-        exceptions = {}
-        for field in self.__class__._info.fields:
-            try:
-                field.validate(getattr(self, field.name))
-            except ValidationException as e:
-                exceptions[field.name] = e
+        fields = self.__class__._info.fields
 
-        if not exceptions:
+        # because I don't like loops...
+        def check(field):
+            # validate the field, if failure occurs then
+            # return a tuple containing the name and exception
+            try:
+                # delegate validation to the document's fields
+                field.validate(getattr(self, field.name))
+                # None value is a marker
+                return (field.name, None)
+            except ValidationException as e:
+                # otherwise set the value to the exception
+                return (field.name, e)
+
+        # validate fields, collecting exceptions in a dictionary
+        exceptions = dict(check(field) for field in fields)
+
+        # return the document instance on success (when all values
+        # in exceptions are None)
+        if all(None is value for value in exceptions.values()):
             return self
 
+        # get rid of false positives (ie when the document has both
+        # valid and invalid fields attached to it)
+        [exceptions.__delitem__(k) for k, v \
+                    in exceptions.items() if v is None]
+
+        # traceback provides a detailed breakdown of a document's
+        # validation errors by field
         raise DocumentValidationException(
             'Document failed to validate', **exceptions)
