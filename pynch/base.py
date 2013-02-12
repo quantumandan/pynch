@@ -1,10 +1,21 @@
-from abc import ABCMeta, abstractmethod
 from query import QueryManager
 from errors import (DelegationException, InheritanceException,
                     ValidationException, DocumentValidationException)
 
 
+# Allows backward compatibility PY less than 2.6
+try:
+    from abc import ABCMeta, abstractmethod
+except ImportError:
+    class ABCMeta(type):
+        pass
+    def abstractmethod(method):
+        method.__isabstractmethod__ = True
+        return method
+
+
 class Serializable(object):
+
     __metaclass__ = ABCMeta
 
     @abstractmethod
@@ -40,7 +51,6 @@ class Field(Serializable):
         self.unique_with = unique_with
         self.primary_key = primary_key
         self.choices = choices
-        self.verbose_name = verbose_name
         self.help_text = help_text
 
     def __call__(self, name, model):
@@ -111,6 +121,7 @@ class InformationDescriptor(object):
     def __init__(self, model):
         self.model = model
         self.backrefs = {}
+        self.collection = model._meta.collection
 
     def __get__(self, document, model=None):
         # if model is None:
@@ -133,6 +144,10 @@ class InformationDescriptor(object):
     def objects(self):
         return QueryManager(self.model)
 
+    @property
+    def collection(self):
+        return self._collection
+
 
 class ModelMetaclass(ABCMeta):
     def __new__(meta, name, bases, attrs):
@@ -148,7 +163,7 @@ class ModelMetaclass(ABCMeta):
         bases.  In other words, _meta attributes "stack".
 
         class Doc_A(Model):
-            _meta = {'index': ['name']}
+            _meta = {'index': ['name'], 'database': 'test'}
             name = StringField()
             ...
 
@@ -157,11 +172,11 @@ class ModelMetaclass(ABCMeta):
             ...
 
         >>> print Doc_B._meta
-        {'index': ['name'], 'max_size': 100000}
+        {'index': ['name'], 'max_size': 100000, 'database': 'test'}
 
         Options include:
         index      := [fieldname, ...] (default = [])
-        collection := True | False     (default = True)
+        collection := collection name  (default = class name)
         max_size   := integer          (default = 100000 bytes)
         database   := string           (default = '')
         """
@@ -172,7 +187,7 @@ class ModelMetaclass(ABCMeta):
         # convert dictproxy to a dict
         base_attrs = dict(bases[0].__dict__)
 
-        _meta = {'index': [], 'collection': True,
+        _meta = {'index': [], 'collection': name,
                  'max_size': 10000, 'database': ''}
 
         # pull out meta modifier, then merge with that of current class
@@ -219,10 +234,11 @@ class Model(Serializable):
         return None
 
     def _to_mongo(self):
+        instance = self.validate()
         fields = self._info.fields
         # build a mongo compatible dictionary
         mongo = dict((field.name, field._to_mongo(
-                        getattr(self, field.name))) for field in fields)
+                        getattr(instance, field.name))) for field in fields)
         return mongo
 
     def _to_python(cls, mongo):
@@ -252,3 +268,24 @@ class Model(Serializable):
         # validation errors by field
         raise DocumentValidationException(
             'Document failed to validate', **exceptions)
+
+    def save(self):
+        checks = map(lambda fcn: fcn(self),
+            [check_required, check_unique, check_unique_with])
+
+        if all(checks):
+            self._info.collection.insert(self._to_mongo())
+        else:
+            raise DocumentValidationException('Failed to save document')
+
+
+def check_required(document):
+    pass
+
+
+def check_unique(document):
+    pass
+
+
+def check_unique_with(document):
+    pass
