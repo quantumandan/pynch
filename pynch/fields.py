@@ -2,6 +2,7 @@ from base import Field, Model
 from bson.dbref import DBRef
 import types
 from errors import ValidationException
+import pymongo
 
 
 class DynamicField(Field):
@@ -24,6 +25,8 @@ class SimpleField(Field):
     Marker class for fields that can take data of
     any simple type (ie not a container type). Does
     no validation.
+
+    TODO: PY3 compatibility for simple types.
     """
     pass
 
@@ -51,7 +54,6 @@ class ComplexField(Field):
         return super(ComplexField, self).__call__(name, model)
 
     def is_dynamic(self):
-        # is dynamic if contents of the DictField are untyped
         return isinstance(self.field, DynamicField)
 
 
@@ -152,8 +154,10 @@ class ReferenceField(Field):
     me
     >>> print person.instructor.name
     MrJones
-    >>> print Gardener.gardener.reference
+    >>> print Garden.gardener.reference
     <class Gardener ...>
+    >>> print Gardener._info.backrefs
+    set([<class Garden ...>, <class Gardener ...>])
     """
     def __init__(self, reference, **params):
         super(ReferenceField, self).__init__(**params)
@@ -180,8 +184,8 @@ class ReferenceField(Field):
         self.reference._info.backrefs[self.name].remove(self.model)
         super(ReferenceField, self).__delete__(document)
 
-    def _to_python(self, mongo):
-        pass
+    def _to_python(self, dbref):
+        return pymongo.dereference(dbref)
 
     def _to_mongo(self, document):
         return DBRef(self.reference.__name__, document.pk.name,
@@ -197,6 +201,11 @@ class ReferenceField(Field):
 
 
 class StringField(SimpleField):
+    def _to_mongo(self, value):
+        return unicode(value)
+
+    _to_python = _to_mongo
+
     def validate(self, value):
         if isinstance(value, basestring):
             return value
@@ -205,21 +214,27 @@ class StringField(SimpleField):
             'value is of type %s but should be %s' \
                 % (type(value), basestring))
 
-    def _to_mongo(self, value):
-        return unicode(value)
-
-    _to_python = _to_mongo
-
 
 class URLField(StringField):
-    pass
+    def validate(self, value):
+        super(URLField, self).validate(value)
+        # TODO: regex action, url verification
+        pass
 
 
 class EmailField(StringField):
-    pass
+    def validate(self, value):
+        super(EmailField, self).validate(value)
+        # TODO: regex action, email verification
+        pass
 
 
 class IntegerField(SimpleField):
+    def _to_mongo(self, value):
+        return int(value)
+
+    _to_python = _to_mongo
+
     def validate(self, value):
         if isinstance(value, int):
             return value
@@ -228,13 +243,13 @@ class IntegerField(SimpleField):
             'value is of type %s but should be %s' \
                 % (type(value), bool))
 
+
+class FloatField(SimpleField):
     def _to_mongo(self, value):
-        return int(value)
+        return float(value)
 
     _to_python = _to_mongo
 
-
-class FloatField(SimpleField):
     def validate(self, value):
         if isinstance(value, float):
             return value
@@ -242,11 +257,6 @@ class FloatField(SimpleField):
         raise ValidationException(
             'value is of type %s but should be %s' \
                 % (type(value), float))
-
-    def _to_mongo(self, value):
-        return float(value)
-
-    _to_python = _to_mongo
 
 
 class DecimalField(SimpleField):
@@ -258,6 +268,11 @@ class DecimalField(SimpleField):
 
 
 class BooleanField(SimpleField):
+    def _to_mongo(self, value):
+        return bool(value)
+
+    _to_python = _to_mongo
+
     def validate(self, value):
         if isinstance(value, bool):
             return value
@@ -266,11 +281,8 @@ class BooleanField(SimpleField):
             'value is of type %s but should be %s' \
                 % (type(value), bool))
 
-    def _to_mongo(self, value):
-        return bool(value)
 
-    _to_python = _to_mongo
-
+## XXX: Under Construction
 
 class DateTimeField(SimpleField):
     pass
