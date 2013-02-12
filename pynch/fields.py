@@ -188,7 +188,7 @@ class ReferenceField(Field):
         return pymongo.dereference(dbref)
 
     def _to_mongo(self, document):
-        return DBRef(self.reference.__name__, document.pk.name,
+        return DBRef(self.reference.__name__, document.pk,
                      database=self.reference._meta.database)
 
     def validate(self, value):
