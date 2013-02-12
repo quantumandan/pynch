@@ -1,5 +1,3 @@
-
-
 class InheritanceException(TypeError):
     pass
 

@@ -1,7 +1,7 @@
 from query import QueryManager
 from errors import (DelegationException, InheritanceException,
                     ValidationException, DocumentValidationException)
-
+from util import document_master_check
 
 # Allows backward compatibility PY less than 2.6
 try:
@@ -48,7 +48,7 @@ class Field(Serializable):
         self.required = required
         self.default = default
         self.unique = bool(unique or unique_with)
-        self.unique_with = unique_with
+        self.unique_with = list(unique_with) if unique_with else []
         self.primary_key = primary_key
         self.choices = choices
         self.help_text = help_text
@@ -270,22 +270,7 @@ class Model(Serializable):
             'Document failed to validate', **exceptions)
 
     def save(self):
-        checks = map(lambda fcn: fcn(self),
-            [check_required, check_unique, check_unique_with])
-
-        if all(checks):
+        if document_master_check(self):
             self._info.collection.insert(self._to_mongo())
         else:
             raise DocumentValidationException('Failed to save document')
-
-
-def check_required(document):
-    pass
-
-
-def check_unique(document):
-    pass
-
-
-def check_unique_with(document):
-    pass
