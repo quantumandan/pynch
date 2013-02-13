@@ -106,8 +106,8 @@ class InformationDescriptor(object):
 
     @property
     def fields(self):
-        # remember that fields with a leading underscore are "hidden"
-        # unless the field's name is `_id`
+        # remember that attributes with a leading underscore are
+        # "hidden" unless the attribute's name is `_id`
         return [v for k, v in self.model.__dict__.items() \
                     if isinstance(v, Field) and \
                         (not k.startswith('_') or k is '_id')]
@@ -143,7 +143,6 @@ class ModelMetaclass(type):
 
         Options include:
         index      := [fieldname, ...] (default = [])
-        collection := collection name  (default = class name)
         max_size   := integer          (default = 100000 bytes)
         database   := string           (default = '')
         """
@@ -154,8 +153,8 @@ class ModelMetaclass(type):
         # convert dictproxy to a dict
         base_attrs = dict(bases[0].__dict__)
 
-        _meta = {'index': [], 'collection': name,
-                 'max_size': 10000, 'database': ''}
+        # default _meta
+        _meta = {'index': [], 'max_size': 10000, 'database': ''}
 
         # pull out meta modifier, then merge with that of current class
         _meta.update(base_attrs.pop('_meta', {}))
@@ -212,7 +211,11 @@ class Model(object):
 
     @classmethod
     def to_python(cls, mongo):
-        pass
+        python_fields = {}
+        for field in cls._info.fields:
+            fieldname = field.name
+            python_fields[fieldname] = field._to_python(mongo[fieldname])
+        return cls(**python_fields)
 
     def validate(self):
         # validate fields, collecting exceptions in a dictionary
