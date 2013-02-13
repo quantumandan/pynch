@@ -1,14 +1,15 @@
 from query import QueryManager
 from errors import (DelegationException, InheritanceException,
                     ValidationException, DocumentValidationException)
-from util import document_master_check
-
+from util import field_master_check
 # Allows backward compatibility PY less than 2.6
 try:
     from abc import ABCMeta, abstractmethod
 except ImportError:
+    # marker metaclass, does nothing
     class ABCMeta(type):
         pass
+    # marker decorator
     def abstractmethod(method):
         method.__isabstractmethod__ = True
         return method
@@ -234,11 +235,11 @@ class Model(Serializable):
         return None
 
     def _to_mongo(self):
-        instance = self.validate()
+        self.validate()
         fields = self._info.fields
         # build a mongo compatible dictionary
         mongo = dict((field.name, field._to_mongo(
-                        getattr(instance, field.name))) for field in fields)
+                        getattr(self, field.name))) for field in fields)
         return mongo
 
     def _to_python(cls, mongo):
@@ -250,8 +251,7 @@ class Model(Serializable):
         def check_fields(fields):
             for field in fields:
                 try:
-                    # delegate validation to the document's fields
-                    field.validate(getattr(self, field.name))
+                    field_master_check(self, field)
                 except ValidationException as e:
                     # otherwise set the value to the exception
                     yield (field.name, e)
@@ -270,7 +270,4 @@ class Model(Serializable):
             'Document failed to validate', **exceptions)
 
     def save(self):
-        if document_master_check(self):
-            self._info.collection.insert(self._to_mongo())
-        else:
-            raise DocumentValidationException('Failed to save document')
+        self._info.collection.insert(self._to_mongo())
