@@ -1,7 +1,7 @@
 from query import QueryManager
+from util import check_fields, MultiDict
 from errors import (DelegationException, InheritanceException,
                     ValidationException, DocumentValidationException)
-from util import field_master_check
 
 
 class Field(object):
@@ -61,14 +61,17 @@ class Field(object):
     def __str__(self):
         return self.name if hasattr(self, 'name') else self.db_field
 
-    def _to_python(self, data):
-        pass
+    def _to_python(self, *args, **kwargs):
+        raise DelegationException('Define in a subclass')
 
-    def _to_mongo(self, document):
-        pass
+    def _to_mongo(self, *args, **kwargs):
+        raise DelegationException('Define in a subclass')
 
-    def validate(self, *args, **kwargs):
-        raise DelegationException('Define in subclass')
+    def validate(self, data):
+        if data is None:
+            raise ValidationException(
+                'NoneType is not a valid data type')
+        return data
 
 
 class InformationDescriptor(object):
@@ -96,9 +99,6 @@ class InformationDescriptor(object):
         # self.collection = model._meta.collection
 
     def __get__(self, document, model=None):
-        # if model is None:
-        #     raise Exception('Can only access through a model'
-        #                     ', not a document model instance')
         return self
 
     def __set__(self, document, value):
@@ -202,7 +202,7 @@ class Model(object):
                 return getattr(self, field.name)
         return None
 
-    def _to_mongo(self):
+    def to_mongo(self):
         self.validate()
         fields = self._info.fields
         # build a mongo compatible dictionary
@@ -210,22 +210,13 @@ class Model(object):
                         getattr(self, field.name))) for field in fields)
         return mongo
 
-    def _to_python(cls, mongo):
+    @classmethod
+    def to_python(cls, mongo):
         pass
 
     def validate(self):
-        # validate the field, if failure occurs then
-        # yield a tuple containing the name and exception
-        def check_fields(fields):
-            for field in fields:
-                try:
-                    field_master_check(self, field)
-                except ValidationException as e:
-                    # otherwise set the value to the exception
-                    yield (field.name, e)
-
         # validate fields, collecting exceptions in a dictionary
-        exceptions = dict(check_fields(self._info.fields))
+        exceptions = MultiDict(check_fields(self))
 
         # return the document instance on success
         # (ie exceptions is empty)
@@ -235,7 +226,7 @@ class Model(object):
         # traceback provides a detailed breakdown of a document's
         # validation errors by field
         raise DocumentValidationException(
-            'Document failed to validate', **exceptions)
+            'Document failed to validate', exceptions=exceptions)
 
     def save(self):
-        self._info.collection.insert(self._to_mongo())
+        self._info.collection.insert(self.to_mongo())

@@ -1,7 +1,7 @@
 from base import Field, Model
 from bson.dbref import DBRef
 import types
-from errors import ValidationException
+from errors import ValidationTypeException
 import pymongo
 
 
@@ -195,9 +195,8 @@ class ReferenceField(Field):
         if isinstance(value, self.reference):
             return value
 
-        raise ValidationException(
-            'value is of type %s but should be %s' \
-                % (type(value), self.reference))
+        raise ValidationTypeException(actually_is=type(value),
+                                      should_be=self.reference)
 
 
 class StringField(SimpleField):
@@ -210,23 +209,20 @@ class StringField(SimpleField):
         if isinstance(value, basestring):
             return value
 
-        raise ValidationException(
-            'value is of type %s but should be %s' \
-                % (type(value), basestring))
+        raise ValidationTypeException(actually_is=type(value),
+                                      should_be=basestring)
 
 
 class URLField(StringField):
     def validate(self, value):
-        super(URLField, self).validate(value)
         # TODO: regex action, url verification
-        pass
+        return super(URLField, self).validate(value)
 
 
 class EmailField(StringField):
     def validate(self, value):
-        super(EmailField, self).validate(value)
         # TODO: regex action, email verification
-        pass
+        return super(EmailField, self).validate(value)
 
 
 class IntegerField(SimpleField):
@@ -239,9 +235,8 @@ class IntegerField(SimpleField):
         if isinstance(value, int):
             return value
 
-        raise ValidationException(
-            'value is of type %s but should be %s' \
-                % (type(value), bool))
+        raise ValidationTypeException(actually_is=type(value),
+                                      should_be=int)
 
 
 class FloatField(SimpleField):
@@ -254,9 +249,8 @@ class FloatField(SimpleField):
         if isinstance(value, float):
             return value
 
-        raise ValidationException(
-            'value is of type %s but should be %s' \
-                % (type(value), float))
+        raise ValidationTypeException(actually_is=type(value),
+                                      should_be=float)
 
 
 class DecimalField(SimpleField):
@@ -277,9 +271,8 @@ class BooleanField(SimpleField):
         if isinstance(value, bool):
             return value
 
-        raise ValidationException(
-            'value is of type %s but should be %s' \
-                % (type(value), bool))
+        raise ValidationTypeException(actually_is=type(value),
+                                      should_be=bool)
 
 
 ## XXX: Under Construction
