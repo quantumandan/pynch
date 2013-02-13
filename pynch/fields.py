@@ -82,7 +82,7 @@ class ListField(ComplexField):
     def _to_mongo(self, lst):
         def mongo_caller(x):
             return x.to_mongo() if \
-                isinstance(self.field, Model) else self.field._to_mongo(x)
+                issubclass(self.field, Model) else self.field._to_mongo(x)
 
         return [mongo_caller(x) for x in lst]
 
@@ -106,7 +106,7 @@ class DictField(ComplexField):
     def _to_mongo(self, document):
         def mongo_caller(x):
             return x.to_mongo() if \
-                isinstance(self.field, Model) else self.field._to_mongo(x)
+                issubclass(self.field, Model) else self.field._to_mongo(x)
 
         return dict((k, mongo_caller(v)) for k, v in \
                             document.__dict__[self.name].items())
@@ -130,7 +130,7 @@ class GeneratorField(ComplexField):
     def _to_mongo(self, generator):
         def mongo_caller(x):
             return x.to_mongo() if \
-                isinstance(self.field, Model) else self.field._to_mongo(x)
+                issubclass(self.field, Model) else self.field._to_mongo(x)
 
         return [mongo_caller(x) for x in generator]
 
@@ -200,7 +200,7 @@ class ReferenceField(Field):
 
     def _to_mongo(self, document):
         return DBRef(self.reference.__name__, document.pk,
-                     database=self.reference._meta.database)
+                     database=self.reference._meta['database'])
 
     def validate(self, value):
         if isinstance(value, self.reference):
