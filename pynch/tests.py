@@ -4,13 +4,15 @@ from fields import *
 from db import DB
 
 
-
 class PynchTestSuite(unittest.TestCase):
     def setUp(self):
-        class Flower(Model):
+        class BaseFlora(Model):
+            _meta = {'database': DB('test', 'localhost', 27017)}
+
+        class Flower(BaseFlora):
             name = StringField()
 
-        class Gardener(Model):
+        class Gardener(BaseFlora):
             name = StringField(required=True)
             instructor = ReferenceField('self')
 
@@ -18,10 +20,11 @@ class PynchTestSuite(unittest.TestCase):
                 return self.name
 
         class BugStomper(Gardener):
+            _meta = {'database': DB('test-2', 'localhost', 27017)}
             stomper = ReferenceField(Gardener)
             number_squashed = IntegerField()
 
-        class Garden(Model):
+        class Garden(BaseFlora):
             acres = FloatField()
             gardener = ReferenceField(Gardener,  unique_with=['bug_stomper'])
             flowers = ListField(Flower)
@@ -34,7 +37,7 @@ class PynchTestSuite(unittest.TestCase):
 
     def test_required__simple_types(self):
         class Doc_A(Model):
-            _meta = {'database': DB('localhost', 27017, 'test')}
+            _meta = {'database': DB('test', 'localhost', 27017)}
             field1 = StringField(required=True)
             field2 = IntegerField(required=True)
 
@@ -84,7 +87,8 @@ class PynchTestSuite(unittest.TestCase):
     def test_this(self):
         jones = self.Gardener(name='Mr. Jones')
         me = self.Gardener(name='Jim', instructor=jones)
-        stomper = self.BugStomper(stomper=jones, number_squashed=0)
+        stomper = self.BugStomper(stomper=jones)
+        stomper.validate()
         garden = self.Garden(gardener=me, bug_stomper=stomper)
         garden.acres = 0.25
         garden.flowers = [self.Flower(name='rose'), self.Flower(name='daisy')]
@@ -94,6 +98,7 @@ class PynchTestSuite(unittest.TestCase):
             bliss = ListField(ReferenceField(self.Gardener))
 
         garden.validate()
+        garden.save()
         # print garden.to_mongo()
         # self.Garden.validate(garden)
         # p = Phoo()

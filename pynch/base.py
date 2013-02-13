@@ -1,17 +1,18 @@
 from query import QueryManager
-from util import check_fields, MultiDict
+from util.field_utils import check_fields, get_field_value_or_default
+from util.misc import MultiDict
+from db import MockDatabase, MockConnection, DB
 from errors import (DelegationException, InheritanceException,
-                    ValidationException, DocumentValidationException)
-from db import FakeConnection, FakeDatabase, DB
+                    DocumentValidationException, ConnectionException)
 import pymongo
-import weakref
 from bson.objectid import ObjectId
+import weakref
 
 
 class Field(object):
     def __init__(self, db_field=None, required=False, default=None,
                  unique=False, unique_with=None, primary_key=False,
-                 choices=None, verbose_name=None, help_text=None):
+                 choices=None, help_text=None):
         """
         Base class for all field types. Fields are descriptors that
         manage the validation and typing of a document's attributes.
@@ -19,10 +20,11 @@ class Field(object):
         self.db_field = db_field if not primary_key else '_id'
         self.required = required
         self.default = default
-        self.unique = bool(unique or unique_with)
+        # self.unique = bool(unique or unique_with)
+        self.unique = unique
         self.unique_with = unique_with if unique_with else []
         self.primary_key = primary_key
-        self.choices = choices
+        self.choices = choices if choices else []
         self.help_text = help_text
 
     def __call__(self, name, model):
@@ -41,45 +43,46 @@ class Field(object):
         # return field instance if accessed through the class
         if document is None:
             return self
-
-        # must convert KeyErrors to AttributeErrors
-        try:
-            return document.__dict__[self.name]
-        except KeyError:
-            raise AttributeError
+        # converts KeyErrors to AttributeErrors in the event
+        # that the value is not found in the document and the
+        # default is None
+        return get_field_value_or_default(document, self)
 
     def __set__(self, document, value):
         document.__dict__[self.name] = self.validate(value)
 
     def __delete__(self, document):
-        # must convert KeyErrors to AttributeErrors
+        # convert KeyErrors to AttributeErrors
         try:
             del document.__dict__[self.name]
         except KeyError:
             raise AttributeError
 
     def __str__(self):
-        return self.name if hasattr(self, 'name') else self.db_field
-
-    def _to_python(self, value):
-        raise DelegationException('Define in a subclass')
+        unset_msg = '<%s %s field object not set>' % (type(self), id(self))
+        return getattr(self, 'name', unset_msg)
 
     def _to_mongo(self, value):
         if self.primary_key:
             return ObjectId(value)
         return value
 
+    def _to_python(self, value):
+        raise DelegationException('Define in a subclass')
+
     def validate(self, data):
-        if data is None:
-            raise ValidationException(
-                'NoneType is not a valid data type')
-        return data
+        raise DelegationException('Define in a subclass')
+
+    def is_set(self):
+        return hasattr(self, 'name')
 
 
 class InformationDescriptor(object):
     """
     Among other things, is responsible for generating and managing
     pynch connections to the database.
+
+    Most of your time will be spent accessing things like `objects`
 
     >>> classic = Book(title='Moby Dick', author='Charles Dickens')
     >>> horror  = Book(title='The Stand', author='Steven King')
@@ -95,28 +98,20 @@ class InformationDescriptor(object):
         self.model = model
         self.backrefs = {}
 
-        # do more prep
-        host, port, db_name = self.model._meta.get('database')
-        key = (host, port)
+        # do some more prep
+        db_name, host, port = self.model._meta.get('database')
+        try:
+            self.connection = self.connect(host, port)
+        except ConnectionException:
+            self.connection = MockConnection(host, port)
 
-        # First we need to establish a connection to the db. We
-        # want the option of hooking into multiple databases but
-        # we don't want to unecessarily spawn connections. Therefore
-        # models which declare (or inherit) the same host/port
-        # values in their _meta will share a connection.
-        if key not in self._connection_pool:
-            connection = pymongo.MongoClient(host=host, port=port)
-            # set value in the connection pool
-            self._connection = \
-                self._connection_pool.setdefault(key, connection)
-        else:
-            # ... otherwise just get what's already there
-            self._connection = self._connection_pool[key]
+        # generate the actual database
+        self.db = self.connection[db_name] if \
+                        db_name else MockDatabase(self.connection)
 
-        # Generate the actual database and collection we're going to use
-        if db_name:
-            self._db = self._connection[db_name]
-            self._collection = getattr(self._db, model.__name__)
+        # and the collection we're going to use
+        model_name = self.model.__name__
+        self.collection = getattr(self.db, model_name)
 
     def __get__(self, document, model=None):
         return self
@@ -125,27 +120,31 @@ class InformationDescriptor(object):
         # bad things happen if _info goes away
         raise NotImplementedError('Cannot overwrite _info')
 
-    @property
-    def fields(self):
-        model_dict = self.model.__dict__
-        return [v for v in model_dict.values() if isinstance(v, Field)]
+    def connect(self, host, port):
+        """
+        First we need to establish a connection to the db. We
+        want the option of hooking into multiple databases but
+        we don't want to unecessarily spawn connections. Therefore
+        models which declare (or inherit) the same host and port
+        values in their respective _meta's will share a connection.
+        """
+        key = (host, port)
+        if key not in self._connection_pool:
+            # build the connection
+            connection = pymongo.MongoClient(host=host, port=port)
+            # set value in the connection pool
+            return self._connection_pool.setdefault(key, connection)
+        # otherwise just get what's already there
+        return self._connection_pool[key]
 
     @property
     def objects(self):
         return QueryManager(self.model)
 
     @property
-    def connection(self):
-        return self._connection
-
-    @property
-    def db(self):
-        return self._db if hasattr(self, '_db') else FakeDatabase()
-
-    @property
-    def collection(self):
-        return self._collection if \
-            hasattr(self, '_collection') else FakeConnection()
+    def fields(self):
+        model_dict = self.model.__dict__
+        return [v for v in model_dict.values() if isinstance(v, Field)]
 
 
 class ModelMetaclass(type):
@@ -159,7 +158,7 @@ class ModelMetaclass(type):
 
     class Doc_A(Model):
         _meta = {'index': ['name'],
-                 'database': DB('localhost', 27017, 'test')}
+                 'database': DB('test', 'localhost', 27017)}
         name = StringField()
         ...
 
@@ -170,37 +169,37 @@ class ModelMetaclass(type):
     Doc_B._meta will be:
 
         _meta = {'index': ['name'], 'max_size': 10000,
-                 'database': DB('localhost', 27017, 'test')}
+                 'database': DB('test', 'localhost', 27017)}
 
-    Options include:
+    Options include,
     index    := [fieldname, ...]  (default = [])
     max_size := integer           (default = 10000 bytes)
 
-    Where `database` is a pynch.db.DB object
+    Where `database` is a pynch.db.DB object,
+    name     := string            (default = '')
     host     := string            (default = 'localhost')
     port     := integer           (default = 27017)
-    name     := string            (default = '')
 
     An interesting application, you can build a distributed,
-    object oriented database like so:
+    NoSQL database like so:
 
     class Doc_C(Doc_B):
-        _meta = {'database': DB('localhost', 27017, 'test-2')}
+        _meta = {'database': DB('test-2', 'localhost', 27017)}
         field = ReferenceField(Doc_B)
 
     class Doc_D(Doc_B):
-        _meta = {'database': DB('localhost', 27017, 'test-3')}
+        _meta = {'database': DB('test-3', 'localhost', 27017)}
         field = ReferenceField(Doc_C)
 
     class Doc_E(Doc_B):
-        _meta = {'database': DB('173.1.254.2', 27017, 'test-4')}
+        _meta = {'database': DB('test-4', '173.1.2.5', 27017)}
         field = ReferenceField(Doc_D)
 
     Essentially, Docs A-D are stored locally, but in different
     databases, while Doc_E is stored remotely. Every save and
     query is automatically routed to the correct database. This
     works even if subclasses of Model share references across
-    different databases.
+    the different databases.
 
     TODO: embrace the awesomeness that is a distributed database,
           and implement a way of "meta-indexing" the databases.
@@ -214,8 +213,7 @@ class ModelMetaclass(type):
         base_attrs = dict(bases[0].__dict__)
 
         # default _meta
-        _meta = {'index': [], 'max_size': 10000000,
-                 'database': DB('localhost', 27017, '')}
+        _meta = {'index': [], 'max_size': 10000000, 'database': DB()}
 
         # pull out _meta modifier, then merge with that of current class
         _meta.update(base_attrs.pop('_meta', {}))
@@ -257,28 +255,34 @@ class Model(object):
 
     @property
     def pk(self):
+        """finds the model's primary key, if any"""
         for field in self._info.fields:
             if field.primary_key:
-                return ObjectId(getattr(self, field.name))
-
+                return getattr(self, field.name)
         return self._id if hasattr(self, '_id') else None
 
     def to_mongo(self):
         self.validate()
-        # lambda fcn that returns tuples of (db_field, document field value)
-        _to_mongo = lambda field: (field.db_field or field.name,
-                                   field._to_mongo(getattr(self, field.name)))
-        # build a mongo compatible dictionary
-        mongo = dict(_to_mongo(field) for field in self._info.fields)
+        # lambda fcn that returns tuples of value:
+        # (db field, document field's value)
+        _to_mongo_tuple = lambda field: \
+                                (field.db_field or field.name,
+                                 field._to_mongo(getattr(self, field.name)))
 
+        # build a mongo compatible dictionary
+        mongo = dict(_to_mongo_tuple(field) for field in self._info.fields)
         return mongo
 
     @classmethod
     def to_python(cls, mongo):
-        python_fields = {}
-        for field in cls._info.fields:
-            python_fields[field.name] = field._to_python(mongo[field.db_field])
+        python_fields = pymongo.son.SON()
 
+        for field in cls._info.fields:
+            # (secretly) traverse the document hierarchy
+            python_fields[field.name] = \
+                field._to_python(mongo[field.db_field or field.name])
+
+        # cast the resulting dict to this particular model type
         return cls(**python_fields)
 
     def validate(self):

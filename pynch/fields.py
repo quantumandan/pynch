@@ -1,14 +1,14 @@
 from base import Field, Model
+from errors import FieldTypeException, DelegationException
 from bson.dbref import DBRef
-import types
-from errors import FieldTypeException
+from types import GeneratorType
 import pymongo
 
 
 class DynamicField(Field):
     """
     Marker class for fields that can take data of
-    any type. Does (almost) no validation.
+    any type. Does no actual validation.
     """
     def _to_mongo(self, data):
         return data
@@ -16,16 +16,26 @@ class DynamicField(Field):
     def _to_python(self, data):
         return data
 
+    def validate(self, data):
+        return data
+
 
 class SimpleField(Field):
     """
     Marker class for fields that can take data of
     any simple type (ie not a container type). Does
-    (almost) no validation.
+    no actual validation.
 
     TODO: PY3 compatibility for simple types.
     """
-    pass
+    def _to_mongo(self, data):
+        return data
+
+    def _to_python(self, data):
+        return data
+
+    def validate(self, data):
+        return data
 
 
 class ComplexField(Field):
@@ -39,7 +49,7 @@ class ComplexField(Field):
     def __init__(self, field=None, **params):
         # ComplexField's cannot be primary keys
         assert not params.pop('primary_key', False), \
-            "ComplexField's may not be primary keys"
+                    "ComplexFields may not be primary keys"
         # a reference to the type of each element in the field
         self.field = field if field else DynamicField()
         # all other fields are a go
@@ -68,6 +78,9 @@ class ComplexField(Field):
         return x.to_mongo() if \
             issubclass(self.field, Model) else self.field._to_mongo(x)
 
+    def validate(self, data):
+        raise DelegationException('Define in a subclass')
+
 
 class ListField(ComplexField):
     """
@@ -88,18 +101,21 @@ class ListField(ComplexField):
     Rose
     """
     def __set__(self, document, value):
-        assert isinstance(value, list)
+        if not isinstance(value, list):
+            raise FieldTypeException(
+                        actually_is=type(value), should_be=list)
         super(ListField, self).__set__(document, value)
 
     def _to_mongo(self, lst):
-        return [self._to_mongo_caller(x) for x in lst]
+        _to_mongo_caller = self._to_mongo_caller  # optimization
+        return [_to_mongo_caller(x) for x in lst]
 
     def _to_python(self, lst):
-        _to_python = self.field._to_python  # optimization
+        _to_python = self.field._to_python        # optimization
         return [_to_python(x) for x in lst]
 
     def validate(self, lst):
-        validate = self.field.validate      # optimization
+        validate = self.field.validate            # optimization
         return [validate(x) for x in lst]
 
 
@@ -109,18 +125,21 @@ class DictField(ComplexField):
     are available.
     """
     def __set__(self, document, value):
-        assert isinstance(value, dict)
+        if not isinstance(value, dict):
+            raise FieldTypeException(
+                    actually_is=type(value), should_be=dict)
         super(DictField, self).__set__(document, value)
 
     def _to_mongo(self, dct):
-        return dict((k, self._to_mongo_caller(v)) for k, v in dct.items())
+        _to_mongo_caller = self._to_mongo_caller  # optimization
+        return dict((k, _to_mongo_caller(v)) for k, v in dct.items())
 
     def _to_python(self, dct):
-        _to_python = self.field._to_python  # optimization
+        _to_python = self.field._to_python        # optimization
         return dict((k, _to_python(v)) for k, v in dct.items())
 
     def validate(self, dct):
-        validate = self.field.validate      # optimization
+        validate = self.field.validate            # optimization
         return dict((k, validate(v)) for k, v in dct.items())
 
 
@@ -129,18 +148,21 @@ class GeneratorField(ComplexField):
     Same as a ListField but with generators instead
     """
     def __set__(self, document, value):
-        assert isinstance(value, types.GeneratorType)
+        if not isinstance(value, GeneratorType):
+            raise FieldTypeException(
+                    actually_is=type(value), should_be=GeneratorType)
         super(GeneratorField, self).__set__(document, value)
 
     def _to_mongo(self, generator):
-        return [self._to_mongo_caller(x) for x in generator]
+        _to_mongo_caller = self._to_mongo_caller  # optimization
+        return [_to_mongo_caller(x) for x in generator]
 
     def _to_python(self, lst):
-        _to_python = self.field._to_python  # optimization
+        _to_python = self.field._to_python        # optimization
         return (_to_python(x) for x in lst)
 
     def validate(self, lst):
-        validate = self.field.validate      # optimization
+        validate = self.field.validate            # optimization
         return (validate(x) for x in lst)
 
 
@@ -185,7 +207,12 @@ class ReferenceField(Field):
                 'self' == self.reference else __import__(self.reference)
 
         # only allow references to documents
-        assert issubclass(self.reference, Model)
+        if not issubclass(self.reference, Model):
+            # we want to find the class (if is an object), or return `reference`
+            actually_is = self.reference if \
+                isinstance(self.reference, type) else type(self.reference)
+            # raise FieldTypeException for illegal reference type
+            raise FieldTypeException(actually_is=actually_is, should_be=Model)
 
         # collect backrefs in a set
         self.reference._info.backrefs.setdefault(
@@ -198,32 +225,34 @@ class ReferenceField(Field):
         super(ReferenceField, self).__delete__(document)
 
     def _to_python(self, dbref):
-        return self.__class__(**pymongo.dereference(dbref))
+        return self.reference(**pymongo.dereference(dbref))
 
     def _to_mongo(self, document):
+        name, host, port = self.reference._meta['database']
         return DBRef(self.reference.__name__, document.pk,
-                     database=self.reference._meta['database'].name)
+                     database=name, host=host, port=port)
 
     def validate(self, value):
         if isinstance(value, self.reference):
             return value
 
-        raise FieldTypeException(actually_is=type(value),
-                                 should_be=self.reference)
+        raise FieldTypeException(
+                actually_is=type(value), should_be=self.reference)
 
 
 class StringField(SimpleField):
     def _to_mongo(self, value):
         return super(StringField, self)._to_mongo(unicode(value))
 
-    _to_python = _to_mongo
+    def _to_python(self, value):
+        return unicode(value)
 
     def validate(self, value):
-        if isinstance(value, basestring):
+        if isinstance(value, basestring) or value is None:
             return value
 
-        raise FieldTypeException(actually_is=type(value),
-                                 should_be=basestring)
+        raise FieldTypeException(
+                actually_is=type(value), should_be=basestring)
 
 
 class IntegerField(SimpleField):
@@ -234,11 +263,11 @@ class IntegerField(SimpleField):
         return int(value)
 
     def validate(self, value):
-        if isinstance(value, int):
+        if isinstance(value, int) or value is None:
             return value
 
-        raise FieldTypeException(actually_is=type(value),
-                                 should_be=int)
+        raise FieldTypeException(
+                actually_is=type(value), should_be=int)
 
 
 class FloatField(SimpleField):
@@ -248,14 +277,12 @@ class FloatField(SimpleField):
     def _to_python(self, value):
         return float(value)
 
-    _to_python = _to_mongo
-
     def validate(self, value):
-        if isinstance(value, float):
+        if isinstance(value, float) or value is None:
             return value
 
-        raise FieldTypeException(actually_is=type(value),
-                                 should_be=float)
+        raise FieldTypeException(
+                actually_is=type(value), should_be=float)
 
 
 class DecimalField(SimpleField):
@@ -268,16 +295,17 @@ class DecimalField(SimpleField):
 
 class BooleanField(SimpleField):
     def _to_mongo(self, value):
+        return super(BooleanField, self)._to_mongo(bool(value))
+
+    def _to_python(self, value):
         return bool(value)
 
-    _to_python = _to_mongo
-
     def validate(self, value):
-        if isinstance(value, bool):
+        if isinstance(value, bool) or value is None:
             return value
 
-        raise FieldTypeException(actually_is=type(value),
-                                 should_be=bool)
+        raise FieldTypeException(
+                actually_is=type(value), should_be=bool)
 
 
 ## XXX: Under Construction
