@@ -80,7 +80,11 @@ class ListField(ComplexField):
         super(ListField, self).__set__(document, value)
 
     def _to_mongo(self, lst):
-        return [self.field._to_mongo(x) for x in lst]
+        def mongo_caller(x):
+            return x.to_mongo() if \
+                isinstance(self.field, Model) else self.field._to_mongo(x)
+
+        return [mongo_caller(x) for x in lst]
 
     def _to_python(self, document):
         return [self.field._to_python(x) \
@@ -100,8 +104,12 @@ class DictField(ComplexField):
         super(DictField, self).__set__(document, value)
 
     def _to_mongo(self, document):
-        return dict((k, self.field._to_mongo(v)) \
-                    for k, v in document.__dict__[self.name].items())
+        def mongo_caller(x):
+            return x.to_mongo() if \
+                isinstance(self.field, Model) else self.field._to_mongo(x)
+
+        return dict((k, mongo_caller(v)) for k, v in \
+                            document.__dict__[self.name].items())
 
     def _to_python(self, document):
         return dict((k, self.field._to_python(v)) \
@@ -119,9 +127,12 @@ class GeneratorField(ComplexField):
         assert isinstance(value, types.GeneratorType)
         super(GeneratorField, self).__set__(document, value)
 
-    def _to_mongo(self, document):
-        return [self.field._to_mongo(x) \
-                    for x in document.__dict__[self.name]]
+    def _to_mongo(self, generator):
+        def mongo_caller(x):
+            return x.to_mongo() if \
+                isinstance(self.field, Model) else self.field._to_mongo(x)
+
+        return [mongo_caller(x) for x in generator]
 
     def _to_python(self, document):
         return (self.field._to_python(x) \
