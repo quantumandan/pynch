@@ -30,6 +30,10 @@ def field_check_unique_with(document, field):
 
     unique_with = field.unique_with
 
+    # since unique_with can be either a string or a list
+    # of strings, we must check and convert as needed
+    unique_with = unique_with if isinstance(unique_with, list) else [unique_with]
+
     for unique_field_name in unique_with:
         # just because a model declares a field doesn't mean
         # the corresponding document will have that attribute

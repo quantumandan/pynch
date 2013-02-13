@@ -34,12 +34,13 @@ class PynchTestSuite(unittest.TestCase):
 
     def test_required__simple_types(self):
         class Doc_A(Model):
+            _meta = {'database': 'test'}
             field1 = StringField(required=True)
             field2 = IntegerField(required=True)
 
         document = Doc_A(field1='hello', field2=1)
         document.validate()
-        print document.to_mongo()
+        document.save()
 
     def test_required__complex_types(self):
         pass
@@ -93,7 +94,7 @@ class PynchTestSuite(unittest.TestCase):
             bliss = ListField(ReferenceField(self.Gardener))
 
         garden.validate()
-        print garden.to_mongo()
+        # print garden.to_mongo()
         # self.Garden.validate(garden)
         # p = Phoo()
         # p.bliss = []

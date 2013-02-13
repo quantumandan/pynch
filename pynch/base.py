@@ -2,6 +2,9 @@ from query import QueryManager
 from util import check_fields, MultiDict
 from errors import (DelegationException, InheritanceException,
                     ValidationException, DocumentValidationException)
+from db import FakeConnection, FakeDatabase
+import pymongo
+import weakref
 
 
 class Field(object):
@@ -11,16 +14,12 @@ class Field(object):
         """
         Base class for all field types. Fields are descriptors that
         manage the validation and typing of a document's attributes.
-
-        Fields whose name starts with a leading underscore are "hidden"
-        These fields are not available through `.info.fields` and must
-        be explicitly dealt with (the only exception is `_id`)
         """
         self.db_field = db_field if not primary_key else '_id'
         self.required = required
         self.default = default
         self.unique = bool(unique or unique_with)
-        self.unique_with = list(unique_with) if unique_with else []
+        self.unique_with = unique_with if unique_with else []
         self.primary_key = primary_key
         self.choices = choices
         self.help_text = help_text
@@ -76,49 +75,74 @@ class Field(object):
 
 class InformationDescriptor(object):
     """
-    class Book(Model):
-        _meta = {'index': ['title', 'author']}
-        title = StringField()
-        author = StringField()
-        chapters = ListField(ReferenceField('Chapter'))
-
-        def __str__(self):
-            return self.title
+    Among other things, is responsible for generating and managing
+    pynch connections to the database.
 
     >>> classic = Book(title='Moby Dick', author='Charles Dickens')
     >>> horror  = Book(title='The Stand', author='Steven King')
-
-    Note, `_info.objects.all()` returns a generator (lazy retrieval)
-
-    >>> print [str(book) for book in Book._info.objects.all()]
-    ['Moby Dick', 'The Stand']
+    >>> print Book._info.objects.all()  # lazy retrieval
+    <generator object ...>
     """
+
+    _connection_pool = weakref.WeakValueDictionary()
+
     def __init__(self, model):
+        # extremely important that we retain a reference to
+        # the model which owns this descriptor
         self.model = model
         self.backrefs = {}
-        # self.collection = model._meta.collection
+
+        # do more prep
+        host, port, db_name = self.model._meta.get('database')
+        key = (host, port)
+
+        # First we need to establish a connection to the db. We
+        # want the option of hooking into multiple databases but
+        # we don't want to unecessarily spawn connections. Therefore
+        # models which declare (or inherit) the same host/port
+        # values in their _meta will share a connection.
+        if key not in self._connection_pool:
+            connection = pymongo.MongoClient(host=host, port=port)
+            # set value in the connection pool
+            self._connection = \
+                self._connection_pool.setdefault(key, connection)
+        else:
+            # ... otherwise just get what's already there
+            self._connection = self._connection_pool[key]
+
+        # Generate the actual database and collection we're going to use
+        if db_name:
+            self._db = self._connection[db_name]
+            self._collection = getattr(self.db, model.__name__)
 
     def __get__(self, document, model=None):
         return self
 
     def __set__(self, document, value):
+        # bad things happen if _info goes away
         raise NotImplementedError('Cannot overwrite _info')
 
     @property
     def fields(self):
-        # remember that attributes with a leading underscore are
-        # "hidden" unless the attribute's name is `_id`
-        return [v for k, v in self.model.__dict__.items() \
-                    if isinstance(v, Field) and \
-                        (not k.startswith('_') or k is '_id')]
+        model_dict = self.model.__dict__
+        return [v for v in model_dict.values() if isinstance(v, Field)]
 
     @property
     def objects(self):
         return QueryManager(self.model)
 
     @property
+    def connection(self):
+        return self._connection
+
+    @property
+    def db(self):
+        return self._db if hasattr(self, '_db') else FakeDatabase()
+
+    @property
     def collection(self):
-        return self._collection
+        return self._collection if \
+            hasattr(self, '_collection') else FakeConnection()
 
 
 class ModelMetaclass(type):
@@ -130,21 +154,28 @@ class ModelMetaclass(type):
         bases.  In other words, _meta attributes "stack".
 
         class Doc_A(Model):
-            _meta = {'index': ['name'], 'database': 'test'}
+            _meta = {'index': ['name'],
+                     'database': ('localhost', 27017, test')}
             name = StringField()
             ...
 
         class Doc_B(Doc_A):
-            _meta = {'max_size': 100000}
+            _meta = {'max_size': 10000}
             ...
 
-        >>> print Doc_B._meta
-        {'index': ['name'], 'max_size': 100000, 'database': 'test'}
+        Doc_B._meta will be:
+
+        _meta = {'index': ['name'], 'max_size': 10000,
+                 'database': ('localhost', 27017, 'test')}
 
         Options include:
-        index      := [fieldname, ...] (default = [])
-        max_size   := integer          (default = 100000 bytes)
-        database   := string           (default = '')
+        index    := [fieldname, ...]  (default = [])
+        max_size := integer           (default = 10000 bytes)
+
+        Where `database` is a tuple
+        host     := string            (default = 'localhost')
+        port     := integer           (default = 27017)
+        name     := string            (default = '')
         """
         if len(bases) > 1:
             raise InheritanceException(
@@ -154,9 +185,10 @@ class ModelMetaclass(type):
         base_attrs = dict(bases[0].__dict__)
 
         # default _meta
-        _meta = {'index': [], 'max_size': 10000, 'database': ''}
+        _meta = {'index': [], 'max_size': 10000000, 'database': 'default_db',
+                 'host': 'localhost', 'port': 27017}
 
-        # pull out meta modifier, then merge with that of current class
+        # pull out _meta modifier, then merge with that of current class
         _meta.update(base_attrs.pop('_meta', {}))
         _meta.update(attrs.pop('_meta', {}))
 
@@ -199,7 +231,7 @@ class Model(object):
         for field in self._info.fields:
             if field.primary_key:
                 return getattr(self, field.name)
-        return None
+        return self._id if hasattr(self, '_id') else None
 
     def to_mongo(self):
         self.validate()

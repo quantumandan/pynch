@@ -8,7 +8,7 @@ import pymongo
 class DynamicField(Field):
     """
     Marker class for fields that can take data of
-    any type. Does no validation.
+    any type. Does (almost) no validation.
     """
     def _to_mongo(self, data):
         return data
@@ -16,15 +16,12 @@ class DynamicField(Field):
     def _to_python(self, data):
         return data
 
-    def validate(self, data):
-        return data
-
 
 class SimpleField(Field):
     """
     Marker class for fields that can take data of
     any simple type (ie not a container type). Does
-    no validation.
+    (almost) no validation.
 
     TODO: PY3 compatibility for simple types.
     """
@@ -45,12 +42,19 @@ class ComplexField(Field):
         self.field = field if field else DynamicField()
 
     def __call__(self, name, model):
+        # if `self.field` is a string (absolute import path) to
+        # a model, then rebind the attribute with the correct model.
+        if isinstance(self.field, basestring):
+            self.field = __import__(self.field)
+
+        # initialize the type of field inside the container
         if isinstance(self.field, SimpleField):
             self.field(name, model)
         if isinstance(self.field, DynamicField):
             self.field(name, Model)
         if isinstance(self.field, ReferenceField):
             self.field(name, self.field.reference)
+
         return super(ComplexField, self).__call__(name, model)
 
     def is_dynamic(self):
