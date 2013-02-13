@@ -37,9 +37,13 @@ class ComplexField(Field):
     the underlying field type is dynamic.
     """
     def __init__(self, field=None, **params):
-        super(ComplexField, self).__init__(**params)
+        # ComplexField's cannot be primary keys
+        assert not params.pop('primary_key', False), \
+            "ComplexField's may not be primary keys"
         # a reference to the type of each element in the field
         self.field = field if field else DynamicField()
+        # all other fields are a go
+        super(ComplexField, self).__init__(**params)
 
     def __call__(self, name, model):
         # if `self.field` is a string (absolute import path) to
@@ -198,7 +202,7 @@ class ReferenceField(Field):
 
     def _to_mongo(self, document):
         return DBRef(self.reference.__name__, document.pk,
-                     database=self.reference._meta['database'])
+                     database=self.reference._meta['database'].name)
 
     def validate(self, value):
         if isinstance(value, self.reference):
@@ -210,7 +214,7 @@ class ReferenceField(Field):
 
 class StringField(SimpleField):
     def _to_mongo(self, value):
-        return unicode(value)
+        return super(StringField, self)._to_mongo(unicode(value))
 
     _to_python = _to_mongo
 
@@ -224,9 +228,10 @@ class StringField(SimpleField):
 
 class IntegerField(SimpleField):
     def _to_mongo(self, value):
-        return int(value)
+        return super(IntegerField, self)._to_mongo(int(value))
 
-    _to_python = _to_mongo
+    def _to_python(self, value):
+        return int(value)
 
     def validate(self, value):
         if isinstance(value, int):
@@ -238,6 +243,9 @@ class IntegerField(SimpleField):
 
 class FloatField(SimpleField):
     def _to_mongo(self, value):
+        return super(FloatField, self)._to_mongo(float(value))
+
+    def _to_python(self, value):
         return float(value)
 
     _to_python = _to_mongo

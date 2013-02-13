@@ -2,9 +2,10 @@ from query import QueryManager
 from util import check_fields, MultiDict
 from errors import (DelegationException, InheritanceException,
                     ValidationException, DocumentValidationException)
-from db import FakeConnection, FakeDatabase
+from db import FakeConnection, FakeDatabase, DB
 import pymongo
 import weakref
+from bson.objectid import ObjectId
 
 
 class Field(object):
@@ -60,11 +61,13 @@ class Field(object):
     def __str__(self):
         return self.name if hasattr(self, 'name') else self.db_field
 
-    def _to_python(self, *args, **kwargs):
+    def _to_python(self, value):
         raise DelegationException('Define in a subclass')
 
-    def _to_mongo(self, *args, **kwargs):
-        raise DelegationException('Define in a subclass')
+    def _to_mongo(self, value):
+        if self.primary_key:
+            return ObjectId(value)
+        return value
 
     def validate(self, data):
         if data is None:
@@ -113,7 +116,7 @@ class InformationDescriptor(object):
         # Generate the actual database and collection we're going to use
         if db_name:
             self._db = self._connection[db_name]
-            self._collection = getattr(self.db, model.__name__)
+            self._collection = getattr(self._db, model.__name__)
 
     def __get__(self, document, model=None):
         return self
@@ -146,37 +149,63 @@ class InformationDescriptor(object):
 
 
 class ModelMetaclass(type):
-    def __new__(meta, name, bases, attrs):
-        """
-        For simplicity we disallow multiple inheritance among Models.
+    """
+    For simplicity we disallow multiple inheritance among Models.
 
-        Notice, that a subclass's _meta attribute inherits from its
-        bases.  In other words, _meta attributes "stack".
+    Notice, that a subclass's _meta attribute inherits from its
+    bases.  In other words, _meta attributes "stack".
 
-        class Doc_A(Model):
-            _meta = {'index': ['name'],
-                     'database': ('localhost', 27017, test')}
-            name = StringField()
-            ...
+    from pynch.db import DB
 
-        class Doc_B(Doc_A):
-            _meta = {'max_size': 10000}
-            ...
+    class Doc_A(Model):
+        _meta = {'index': ['name'],
+                 'database': DB('localhost', 27017, 'test')}
+        name = StringField()
+        ...
 
-        Doc_B._meta will be:
+    class Doc_B(Doc_A):
+        _meta = {'max_size': 10000}
+        ...
+
+    Doc_B._meta will be:
 
         _meta = {'index': ['name'], 'max_size': 10000,
-                 'database': ('localhost', 27017, 'test')}
+                 'database': DB('localhost', 27017, 'test')}
 
-        Options include:
-        index    := [fieldname, ...]  (default = [])
-        max_size := integer           (default = 10000 bytes)
+    Options include:
+    index    := [fieldname, ...]  (default = [])
+    max_size := integer           (default = 10000 bytes)
 
-        Where `database` is a tuple
-        host     := string            (default = 'localhost')
-        port     := integer           (default = 27017)
-        name     := string            (default = '')
-        """
+    Where `database` is a pynch.db.DB object
+    host     := string            (default = 'localhost')
+    port     := integer           (default = 27017)
+    name     := string            (default = '')
+
+    An interesting application, you can build a distributed,
+    object oriented database like so:
+
+    class Doc_C(Doc_B):
+        _meta = {'database': DB('localhost', 27017, 'test-2')}
+        field = ReferenceField(Doc_B)
+
+    class Doc_D(Doc_B):
+        _meta = {'database': DB('localhost', 27017, 'test-3')}
+        field = ReferenceField(Doc_C)
+
+    class Doc_E(Doc_B):
+        _meta = {'database': DB('173.1.254.2', 27017, 'test-4')}
+        field = ReferenceField(Doc_D)
+
+    Essentially, Docs A-D are stored locally, but in different
+    databases, while Doc_E is stored remotely. Every save and
+    query is automatically routed to the correct database. This
+    works even if subclasses of Model share references across
+    different databases.
+
+    TODO: embrace the awesomeness that is a distributed database,
+          and implement a way of "meta-indexing" the databases.
+    """
+    def __new__(meta, name, bases, attrs):
         if len(bases) > 1:
             raise InheritanceException(
                 'Multiple inheritance not allowed')
@@ -185,8 +214,8 @@ class ModelMetaclass(type):
         base_attrs = dict(bases[0].__dict__)
 
         # default _meta
-        _meta = {'index': [], 'max_size': 10000000, 'database': '',
-                 'host': 'localhost', 'port': 27017}
+        _meta = {'index': [], 'max_size': 10000000,
+                 'database': DB('localhost', 27017, '')}
 
         # pull out _meta modifier, then merge with that of current class
         _meta.update(base_attrs.pop('_meta', {}))
@@ -230,23 +259,26 @@ class Model(object):
     def pk(self):
         for field in self._info.fields:
             if field.primary_key:
-                return getattr(self, field.name)
+                return ObjectId(getattr(self, field.name))
+
         return self._id if hasattr(self, '_id') else None
 
     def to_mongo(self):
         self.validate()
-        fields = self._info.fields
+        # lambda fcn that returns tuples of (db_field, document field value)
+        _to_mongo = lambda field: (field.db_field or field.name,
+                                   field._to_mongo(getattr(self, field.name)))
         # build a mongo compatible dictionary
-        mongo = dict((field.name, field._to_mongo(
-                        getattr(self, field.name))) for field in fields)
+        mongo = dict(_to_mongo(field) for field in self._info.fields)
+
         return mongo
 
     @classmethod
     def to_python(cls, mongo):
         python_fields = {}
         for field in cls._info.fields:
-            fieldname = field.name
-            python_fields[fieldname] = field._to_python(mongo[fieldname])
+            python_fields[field.name] = field._to_python(mongo[field.db_field])
+
         return cls(**python_fields)
 
     def validate(self):

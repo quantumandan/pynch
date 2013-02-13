@@ -1,7 +1,7 @@
 import unittest
 from base import Model
 from fields import *
-
+from db import DB
 
 
 
@@ -34,7 +34,7 @@ class PynchTestSuite(unittest.TestCase):
 
     def test_required__simple_types(self):
         class Doc_A(Model):
-            _meta = {'database': 'test'}
+            _meta = {'database': DB('localhost', 27017, 'test')}
             field1 = StringField(required=True)
             field2 = IntegerField(required=True)
 
