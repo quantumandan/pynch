@@ -86,12 +86,13 @@ class ListField(ComplexField):
 
         return [mongo_caller(x) for x in lst]
 
-    def _to_python(self, document):
-        return [self.field._to_python(x) \
-                    for x in document.__dict__[self.name]]
+    def _to_python(self, lst):
+        _to_python = self.field._to_python  # optimization
+        return [_to_python(x) for x in lst]
 
     def validate(self, lst):
-        return [self.field.validate(x) for x in lst]
+        validate = self.field.validate      # optimization
+        return [validate(x) for x in lst]
 
 
 class DictField(ComplexField):
@@ -103,20 +104,20 @@ class DictField(ComplexField):
         assert isinstance(value, dict)
         super(DictField, self).__set__(document, value)
 
-    def _to_mongo(self, document):
+    def _to_mongo(self, dct):
         def mongo_caller(x):
             return x.to_mongo() if \
                 issubclass(self.field, Model) else self.field._to_mongo(x)
 
-        return dict((k, mongo_caller(v)) for k, v in \
-                            document.__dict__[self.name].items())
+        return dict((k, mongo_caller(v)) for k, v in dct.items())
 
-    def _to_python(self, document):
-        return dict((k, self.field._to_python(v)) \
-                    for k, v in document.__dict__[self.name].items())
+    def _to_python(self, dct):
+        _to_python = self.field._to_python  # optimization
+        return dict((k, _to_python(v)) for k, v in dct.items())
 
     def validate(self, dct):
-        return dict((k, self.field.validate(v)) for k, v in dct.items())
+        validate = self.field.validate      # optimization
+        return dict((k, validate(v)) for k, v in dct.items())
 
 
 class GeneratorField(ComplexField):
@@ -134,12 +135,13 @@ class GeneratorField(ComplexField):
 
         return [mongo_caller(x) for x in generator]
 
-    def _to_python(self, document):
-        return (self.field._to_python(x) \
-                    for x in document.__dict__[self.name])
+    def _to_python(self, lst):
+        _to_python = self.field._to_python  # optimization
+        return (_to_python(x) for x in lst)
 
-    def validate(self, gen):
-        return (self.field.validate(x) for x in gen)
+    def validate(self, lst):
+        validate = self.field.validate      # optimization
+        return (validate(x) for x in lst)
 
 
 class ReferenceField(Field):
