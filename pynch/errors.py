@@ -10,9 +10,9 @@ class ValidationException(Exception):
     pass
 
 
-class ValidationTypeException(ValidationException):
+class FieldTypeException(ValidationException):
     def __init__(self, actually_is=None, should_be=None):
-        super(ValidationException, self).__init__(
+        super(FieldTypeException, self).__init__(
             'value is of type %s but should be %s' % (actually_is, should_be))
 
 

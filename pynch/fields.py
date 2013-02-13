@@ -1,7 +1,7 @@
 from base import Field, Model
 from bson.dbref import DBRef
 import types
-from errors import ValidationTypeException
+from errors import FieldTypeException
 import pymongo
 
 
@@ -206,8 +206,8 @@ class ReferenceField(Field):
         if isinstance(value, self.reference):
             return value
 
-        raise ValidationTypeException(actually_is=type(value),
-                                      should_be=self.reference)
+        raise FieldTypeException(actually_is=type(value),
+                                 should_be=self.reference)
 
 
 class StringField(SimpleField):
@@ -220,20 +220,8 @@ class StringField(SimpleField):
         if isinstance(value, basestring):
             return value
 
-        raise ValidationTypeException(actually_is=type(value),
-                                      should_be=basestring)
-
-
-class URLField(StringField):
-    def validate(self, value):
-        # TODO: regex action, url verification
-        return super(URLField, self).validate(value)
-
-
-class EmailField(StringField):
-    def validate(self, value):
-        # TODO: regex action, email verification
-        return super(EmailField, self).validate(value)
+        raise FieldTypeException(actually_is=type(value),
+                                 should_be=basestring)
 
 
 class IntegerField(SimpleField):
@@ -246,8 +234,8 @@ class IntegerField(SimpleField):
         if isinstance(value, int):
             return value
 
-        raise ValidationTypeException(actually_is=type(value),
-                                      should_be=int)
+        raise FieldTypeException(actually_is=type(value),
+                                 should_be=int)
 
 
 class FloatField(SimpleField):
@@ -260,8 +248,8 @@ class FloatField(SimpleField):
         if isinstance(value, float):
             return value
 
-        raise ValidationTypeException(actually_is=type(value),
-                                      should_be=float)
+        raise FieldTypeException(actually_is=type(value),
+                                 should_be=float)
 
 
 class DecimalField(SimpleField):
@@ -282,11 +270,24 @@ class BooleanField(SimpleField):
         if isinstance(value, bool):
             return value
 
-        raise ValidationTypeException(actually_is=type(value),
-                                      should_be=bool)
+        raise FieldTypeException(actually_is=type(value),
+                                 should_be=bool)
 
 
 ## XXX: Under Construction
+
+
+class URLField(StringField):
+    def validate(self, value):
+        # TODO: regex action, url verification
+        return super(URLField, self).validate(value)
+
+
+class EmailField(StringField):
+    def validate(self, value):
+        # TODO: regex action, email verification
+        return super(EmailField, self).validate(value)
+
 
 class DateTimeField(SimpleField):
     pass

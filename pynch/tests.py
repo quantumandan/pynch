@@ -22,7 +22,7 @@ class PynchTestSuite(unittest.TestCase):
             number_squashed = IntegerField()
 
         class Garden(Model):
-            acres = IntegerField()
+            acres = FloatField()
             gardener = ReferenceField(Gardener,  unique_with=['bug_stomper'])
             flowers = ListField(Flower)
             bug_stomper = ReferenceField(BugStomper)
@@ -37,8 +37,9 @@ class PynchTestSuite(unittest.TestCase):
             field1 = StringField(required=True)
             field2 = IntegerField(required=True)
 
-        document = Doc_A(field1='hello')
+        document = Doc_A(field1='hello', field2=1)
         document.validate()
+        print document.to_mongo()
 
     def test_required__complex_types(self):
         pass
@@ -83,7 +84,8 @@ class PynchTestSuite(unittest.TestCase):
         jones = self.Gardener(name='Mr. Jones')
         me = self.Gardener(name='Jim', instructor=jones)
         stomper = self.BugStomper(stomper=jones, number_squashed=0)
-        garden = self.Garden(gardener=stomper, bug_stomper=stomper)
+        garden = self.Garden(gardener=me, bug_stomper=stomper)
+        garden.acres = 0.25
         garden.flowers = [self.Flower(name='rose'), self.Flower(name='daisy')]
 
         class Phoo(Model):
@@ -91,6 +93,7 @@ class PynchTestSuite(unittest.TestCase):
             bliss = ListField(ReferenceField(self.Gardener))
 
         garden.validate()
+        print garden.to_mongo()
         # self.Garden.validate(garden)
         # p = Phoo()
         # p.bliss = []
