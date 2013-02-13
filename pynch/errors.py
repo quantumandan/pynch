@@ -18,8 +18,10 @@ class ValidationTypeException(ValidationException):
 
 class DocumentValidationException(ValidationException):
     def __init__(self, msg='Validation Failure', exceptions=None):
-        exceptions = exceptions if exceptions else {}
-        for name, field_exc in exceptions.items():
+        # since we are clever beasts, notice that an empty dict (as
+        # opposed to a MultiDict) will suffice should exceptions be None
+        self.exceptions = exceptions if exceptions else {}
+        for name, field_exc in self.exceptions.items():
             for exc in field_exc:
                 msg += '\nField "%s" failed to validate: %s' % (name, exc)
         super(DocumentValidationException, self).__init__(msg)
