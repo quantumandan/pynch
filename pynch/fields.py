@@ -198,7 +198,7 @@ class ReferenceField(Field):
         super(ReferenceField, self).__delete__(document)
 
     def _to_python(self, dbref):
-        return pymongo.dereference(dbref)
+        return self.__class__(**pymongo.dereference(dbref))
 
     def _to_mongo(self, document):
         return DBRef(self.reference.__name__, document.pk,
