@@ -60,6 +60,10 @@ class ComplexField(Field):
     def is_dynamic(self):
         return isinstance(self.field, DynamicField)
 
+    def _to_mongo_caller(self, x):
+        return x.to_mongo() if \
+            issubclass(self.field, Model) else self.field._to_mongo(x)
+
 
 class ListField(ComplexField):
     """
@@ -84,11 +88,7 @@ class ListField(ComplexField):
         super(ListField, self).__set__(document, value)
 
     def _to_mongo(self, lst):
-        def mongo_caller(x):
-            return x.to_mongo() if \
-                issubclass(self.field, Model) else self.field._to_mongo(x)
-
-        return [mongo_caller(x) for x in lst]
+        return [self._to_mongo_caller(x) for x in lst]
 
     def _to_python(self, lst):
         _to_python = self.field._to_python  # optimization
@@ -109,11 +109,7 @@ class DictField(ComplexField):
         super(DictField, self).__set__(document, value)
 
     def _to_mongo(self, dct):
-        def mongo_caller(x):
-            return x.to_mongo() if \
-                issubclass(self.field, Model) else self.field._to_mongo(x)
-
-        return dict((k, mongo_caller(v)) for k, v in dct.items())
+        return dict((k, self._to_mongo_caller(v)) for k, v in dct.items())
 
     def _to_python(self, dct):
         _to_python = self.field._to_python  # optimization
@@ -133,11 +129,7 @@ class GeneratorField(ComplexField):
         super(GeneratorField, self).__set__(document, value)
 
     def _to_mongo(self, generator):
-        def mongo_caller(x):
-            return x.to_mongo() if \
-                issubclass(self.field, Model) else self.field._to_mongo(x)
-
-        return [mongo_caller(x) for x in generator]
+        return [self._to_mongo_caller(x) for x in generator]
 
     def _to_python(self, lst):
         _to_python = self.field._to_python  # optimization

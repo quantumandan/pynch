@@ -185,7 +185,7 @@ class ModelMetaclass(type):
         base_attrs = dict(bases[0].__dict__)
 
         # default _meta
-        _meta = {'index': [], 'max_size': 10000000, 'database': 'default_db',
+        _meta = {'index': [], 'max_size': 10000000, 'database': '',
                  'host': 'localhost', 'port': 27017}
 
         # pull out _meta modifier, then merge with that of current class
@@ -263,5 +263,5 @@ class Model(object):
         raise DocumentValidationException(
             'Document failed to validate', exceptions=exceptions)
 
-    def save(self):
+    def save(self, *args, **kwargs):
         self._info.collection.insert(self.to_mongo())
