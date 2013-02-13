@@ -2,37 +2,9 @@ from query import QueryManager
 from errors import (DelegationException, InheritanceException,
                     ValidationException, DocumentValidationException)
 from util import field_master_check
-# Allows backward compatibility PY less than 2.6
-try:
-    from abc import ABCMeta, abstractmethod
-except ImportError:
-    # marker metaclass, does nothing
-    class ABCMeta(type):
-        pass
-    # marker decorator
-    def abstractmethod(method):
-        method.__isabstractmethod__ = True
-        return method
 
 
-class Serializable(object):
-
-    __metaclass__ = ABCMeta
-
-    @abstractmethod
-    def _to_mongo(self, value):
-        raise DelegationException('Define in subclass')
-
-    @abstractmethod
-    def _to_python(self, value):
-        raise DelegationException('Define in subclass')
-
-    @abstractmethod
-    def validate(self, *args, **kwargs):
-        raise DelegationException('Define in subclass')
-
-
-class Field(Serializable):
+class Field(object):
     def __init__(self, db_field=None, required=False, default=None,
                  unique=False, unique_with=None, primary_key=False,
                  choices=None, verbose_name=None, help_text=None):
@@ -44,7 +16,6 @@ class Field(Serializable):
         These fields are not available through `.info.fields` and must
         be explicitly dealt with (the only exception is `_id`)
         """
-        super(Field, self).__init__()
         self.db_field = db_field if not primary_key else '_id'
         self.required = required
         self.default = default
@@ -122,7 +93,7 @@ class InformationDescriptor(object):
     def __init__(self, model):
         self.model = model
         self.backrefs = {}
-        self.collection = model._meta.collection
+        # self.collection = model._meta.collection
 
     def __get__(self, document, model=None):
         # if model is None:
@@ -150,15 +121,10 @@ class InformationDescriptor(object):
         return self._collection
 
 
-class ModelMetaclass(ABCMeta):
+class ModelMetaclass(type):
     def __new__(meta, name, bases, attrs):
         """
         For simplicity we disallow multiple inheritance among Models.
-
-        Because we'd like to use Serializable as the base class for both
-        Fields and Models -- and -- because we need a custom metaclass for
-        Models, ModelMetaclass must subclass ABCMeta if we want to avoid a
-        metaclass conflict.
 
         Notice, that a subclass's _meta attribute inherits from its
         bases.  In other words, _meta attributes "stack".
@@ -202,22 +168,24 @@ class ModelMetaclass(ABCMeta):
         # the new class's __dict__
         namespace.update(attrs)
 
-        return ABCMeta.__new__(meta, name, bases, namespace)
+        return super(ModelMetaclass, meta).__new__(
+                            meta, name, bases, namespace)
 
     def __init__(model, name, bases, attrs):
-        # Necessary so that field descriptors can determine what classes
-        # they are attached to.
+        # Necessary so that field descriptors can determine
+        # what classes they are attached to.
         for fieldname, field in attrs.items():
             if isinstance(field, Field):
                 field(fieldname, model)
 
-        # information descriptor allows class level access to orm functionality
+        # information descriptor allows class level access to
+        # orm functionality
         model._info = InformationDescriptor(model)
-        # DON'T FORGET TO CALL ABCMeta's init
-        ABCMeta.__init__(model, name, bases, attrs)
+        # DON'T FORGET TO CALL type's init
+        super(ModelMetaclass, model).__init__(name, bases, attrs)
 
 
-class Model(Serializable):
+class Model(object):
     __metaclass__ = ModelMetaclass
 
     def __init__(self, **values):
