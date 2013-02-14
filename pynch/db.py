@@ -5,9 +5,12 @@ _DB_tuple = namedtuple('DB', 'name host port')
 
 
 def DB(*args, **kwargs):
-    if not args and not kwargs:
-        return _DB_tuple('', 'localhost', 27017)
-    return _DB_tuple(*args, **kwargs)
+    if not args:
+        name = kwargs.pop('name', '')
+        host = kwargs.pop('host', 'localhost')
+        port = kwargs.pop('port', 27017)
+        return _DB_tuple(name, host, port)
+    return _DB_tuple(*args)
 
 
 class MockConnection(object):

@@ -1,3 +1,6 @@
+from pymongo.errors import ConnectionFailure
+
+
 class InheritanceException(TypeError):
     pass
 
@@ -6,7 +9,7 @@ class DelegationException(InheritanceException):
     pass
 
 
-class ConnectionException(Exception):
+class ConnectionException(ConnectionFailure):
     pass
 
 

@@ -1,6 +1,6 @@
-from base import Field, Model
-from util.misc import type_of
-from errors import FieldTypeException, DelegationException, ValidationException
+from pynch.base import Field, Model
+from pynch.util.misc import type_of, import_class
+from pynch.errors import FieldTypeException, DelegationException, ValidationException
 from bson.dbref import DBRef
 from types import GeneratorType
 import pymongo
@@ -54,7 +54,7 @@ class ComplexField(Field):
         # if `self.field` is a string (absolute import path) to
         # a model, then rebind the attribute with the correct model.
         if isinstance(self.field, basestring):
-            self.field = __import__(self.field)
+            self.field = import_class(self.field, self._context)
 
         # initialize the type of field inside the container
         if isinstance(self.field, (SimpleField, DynamicField)):
@@ -191,8 +191,8 @@ class ReferenceField(Field):
     set([<class 'Garden' ...>, <class 'Gardener' ...>])
     """
     def __init__(self, reference, **params):
-        super(ReferenceField, self).__init__(**params)
         self.reference = reference
+        super(ReferenceField, self).__init__(**params)
 
     def __call__(self, name, model):
         super(ReferenceField, self).__call__(name, model)
@@ -200,7 +200,8 @@ class ReferenceField(Field):
         # a fully qualified import path (str) or is 'self'
         if isinstance(self.reference, basestring):
             self.reference = self.model if \
-                'self' == self.reference else __import__(self.reference)
+                'self' == self.reference else \
+                    import_class(self.reference, context=self._context)
 
         # only allow references to documents
         if not issubclass(self.reference, Model):
@@ -239,7 +240,8 @@ class StringField(SimpleField):
         super(StringField, self).__init__(**params)
 
     def _to_mongo(self, value):
-        return super(StringField, self)._to_mongo(unicode(value))
+        value = unicode(value) if value is not None else value
+        return super(StringField, self)._to_mongo(value)
 
     def _to_python(self, value):
         return unicode(value)
@@ -249,7 +251,10 @@ class StringField(SimpleField):
             raise FieldTypeException(
                     actually_is=type_of(value), should_be=basestring)
 
-        if len(value) <= self.max_length if self.max_length else False:
+        exceeds_length = len(value) > self.max_length \
+                                if self.max_length else False
+
+        if exceeds_length:
             raise ValidationException(
                 '%s exceeds the maximum number of characters' % self.name)
 
@@ -263,7 +268,8 @@ class IntegerField(SimpleField):
         super(IntegerField, self).__init__(**params)
 
     def _to_mongo(self, value):
-        return super(IntegerField, self)._to_mongo(int(value))
+        value = int(value) if value is not None else value
+        return super(IntegerField, self)._to_mongo(value)
 
     def _to_python(self, value):
         return int(value)
@@ -292,7 +298,8 @@ class FloatField(SimpleField):
         super(FloatField, self).__init__(**params)
 
     def _to_mongo(self, value):
-        return super(FloatField, self)._to_mongo(float(value))
+        value = float(value) if value is not None else value
+        return super(FloatField, self)._to_mongo(value)
 
     def _to_python(self, value):
         return float(value)
@@ -316,7 +323,8 @@ class FloatField(SimpleField):
 
 class BooleanField(SimpleField):
     def _to_mongo(self, value):
-        return super(BooleanField, self)._to_mongo(bool(value))
+        value = bool(value) if value is not None else value
+        return super(BooleanField, self)._to_mongo(value)
 
     def _to_python(self, value):
         return bool(value)

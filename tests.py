@@ -1,33 +1,44 @@
 import unittest
-from base import Model
-from fields import *
-from db import DB
+from pynch.base import Model
+from pynch.fields import *
+from pynch.db import DB
+
+
+class BaseFlora(Model):
+    _meta = {'database': DB('test', 'localhost', 27017)}
+
+
+class Flower(BaseFlora):
+    name = StringField()
+
+
+class Gardener(BaseFlora):
+    name = StringField(required=True)
+    instructor = ReferenceField('self')
+
+    def __str__(self):
+        return self.name
+
+
+class BugStomper(Gardener):
+    _meta = {'database': DB('test-2', 'localhost', 27017)}
+    stomper = ReferenceField('Gardener')
+    number_squashed = IntegerField()
+
+
+class Garden(BaseFlora):
+    acres = FloatField()
+    gardener = ReferenceField(Gardener,  unique_with=['bug_stomper'])
+    flowers = ListField(Flower)
+    bug_stomper = ReferenceField(BugStomper)
 
 
 class PynchTestSuite(unittest.TestCase):
-    class BaseFlora(Model):
-        _meta = {'database': DB('test', 'localhost', 27017)}
-
-    class Flower(BaseFlora):
-        name = StringField()
-
-    class Gardener(BaseFlora):
-        name = StringField(required=True)
-        instructor = ReferenceField('self')
-
-        def __str__(self):
-            return self.name
-
-    class BugStomper(Gardener):
-        _meta = {'database': DB('test-2', 'localhost', 27017)}
-        stomper = ReferenceField(Gardener)
-        number_squashed = IntegerField()
-
-    class Garden(BaseFlora):
-        acres = FloatField()
-        gardener = ReferenceField(Gardener,  unique_with=['bug_stomper'])
-        flowers = ListField(Flower)
-        bug_stomper = ReferenceField(BugStomper)
+    def setUp(self):
+        self.Gardener = Gardener
+        self.BugStomper = BugStomper
+        self.Garden = Garden
+        self.Flower = Flower
 
     def test_required__simple_types(self):
         class Doc_A(Model):
@@ -75,7 +86,7 @@ class PynchTestSuite(unittest.TestCase):
     def test_integer_field(self):
         pass
 
-    def test_float_field(self):
+    def test_floatfield(self):
         pass
 
     def test_this(self):
@@ -83,6 +94,7 @@ class PynchTestSuite(unittest.TestCase):
         me = self.Gardener(name='Jim', instructor=jones)
         stomper = self.BugStomper(stomper=jones)
         stomper.validate()
+        stomper.save()
         garden = self.Garden(gardener=me, bug_stomper=stomper)
         garden.acres = 0.25
         garden.flowers = [self.Flower(name='rose'), self.Flower(name='daisy')]

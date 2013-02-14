@@ -1,15 +1,13 @@
-from query import QueryManager
-from util.misc import MultiDict
-from db import MockDatabase, MockConnection, DB
+from pynch.query import QueryManager
+from pynch.db import MockDatabase, MockConnection, DB
 import pymongo
 from bson.objectid import ObjectId
 import weakref
-
-from errors import (DelegationException, InheritanceException,
-                    DocumentValidationException, ConnectionException)
-
-from util.field_utils import (check_fields, field_to_mongo_tuple,
-                              get_field_value_or_default)
+import inspect
+from pynch.errors import *
+from pynch.util.misc import MultiDict
+from pynch.util.field_utils import (check_fields, field_to_mongo_tuple,
+                                    get_field_value_or_default)
 
 
 class Field(object):
@@ -29,6 +27,10 @@ class Field(object):
         self.primary_key = primary_key
         self.choices = choices
         self.help_text = help_text
+        # necessary so that complex fields and reference fields
+        # can import the correct classes
+        outer_frame = inspect.stack()[-1][0]
+        self._context = outer_frame.f_locals['__name__']
 
     def __call__(self, name, model):
         """
@@ -245,9 +247,6 @@ class Model(object):
     query is automatically routed to the correct database. This
     works even if subclasses of Model share references across
     the different databases.
-
-    TODO: embrace the awesomeness that is a distributed database,
-          and implement a way of "meta-indexing" the databases.
     """
     __metaclass__ = ModelMetaclass
 
@@ -306,10 +305,10 @@ class Model(object):
         self._info.collection.update(spec, self.to_mongo(), **kwargs)
 
     def insert(self, *args, **kwargs):
-        self._info.collection.insert(self.to_mongo())
+        self._info.collection.insert(self.to_mongo(), **kwargs)
 
-    def save(self, *args, **kwargs):
-        self._info.collection.save(self.to_mongo())
+    def save(self, **kwargs):
+        self._info.collection.save(self.to_mongo(), **kwargs)
 
     def delete(self):
         oid = ObjectId(self.pk) if self.pk else None

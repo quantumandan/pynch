@@ -1,4 +1,4 @@
-from errors import ValidationException
+from pynch.errors import ValidationException
 
 
 def field_to_mongo_tuple(document, field):
@@ -6,7 +6,7 @@ def field_to_mongo_tuple(document, field):
     returns tuples with value (field name, mongo value)
     """
     return (field.db_field or field.name,
-            field._to_mongo(getattr(document, field.name)))
+            field._to_mongo(getattr(document, field.name, None)))
 
 
 def get_field_value_or_default(document, field):
