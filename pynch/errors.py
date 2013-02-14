@@ -6,11 +6,11 @@ class DelegationException(InheritanceException):
     pass
 
 
-class ValidationException(Exception):
+class ConnectionException(Exception):
     pass
 
 
-class ConnectionException(Exception):
+class ValidationException(Exception):
     pass
 
 

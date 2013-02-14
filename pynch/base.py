@@ -302,5 +302,11 @@ class Model(object):
         raise DocumentValidationException(
             'Document failed to validate', exceptions=exceptions)
 
-    def save(self, *args, **kwargs):
+    def update(self, spec, **kwargs):
+        self._info.collection.update(spec, self.to_mongo(), **kwargs)
+
+    def insert(self, *args, **kwargs):
         self._info.collection.insert(self.to_mongo())
+
+    def save(self, *args, **kwargs):
+        self._info.collection.save(self.to_mongo())

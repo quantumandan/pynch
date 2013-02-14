@@ -5,35 +5,29 @@ from db import DB
 
 
 class PynchTestSuite(unittest.TestCase):
-    def setUp(self):
-        class BaseFlora(Model):
-            _meta = {'database': DB('test', 'localhost', 27017)}
+    class BaseFlora(Model):
+        _meta = {'database': DB('test', 'localhost', 27017)}
 
-        class Flower(BaseFlora):
-            name = StringField()
+    class Flower(BaseFlora):
+        name = StringField()
 
-        class Gardener(BaseFlora):
-            name = StringField(required=True)
-            instructor = ReferenceField('self')
+    class Gardener(BaseFlora):
+        name = StringField(required=True)
+        instructor = ReferenceField('self')
 
-            def __str__(self):
-                return self.name
+        def __str__(self):
+            return self.name
 
-        class BugStomper(Gardener):
-            _meta = {'database': DB('test-2', 'localhost', 27017)}
-            stomper = ReferenceField(Gardener)
-            number_squashed = IntegerField()
+    class BugStomper(Gardener):
+        _meta = {'database': DB('test-2', 'localhost', 27017)}
+        stomper = ReferenceField(Gardener)
+        number_squashed = IntegerField()
 
-        class Garden(BaseFlora):
-            acres = FloatField()
-            gardener = ReferenceField(Gardener,  unique_with=['bug_stomper'])
-            flowers = ListField(Flower)
-            bug_stomper = ReferenceField(BugStomper)
-
-        self.Gardener = Gardener
-        self.BugStomper = BugStomper
-        self.Garden = Garden
-        self.Flower = Flower
+    class Garden(BaseFlora):
+        acres = FloatField()
+        gardener = ReferenceField(Gardener,  unique_with=['bug_stomper'])
+        flowers = ListField(Flower)
+        bug_stomper = ReferenceField(BugStomper)
 
     def test_required__simple_types(self):
         class Doc_A(Model):
@@ -63,25 +57,25 @@ class PynchTestSuite(unittest.TestCase):
     def test_field_value_is_an_inherited_type(self):
         pass
 
-    def test_referencefield(self):
+    def test_reference_field(self):
         pass
 
-    def test_listfield(self):
+    def test_list_field(self):
         pass
 
-    def test_dictfield(self):
+    def test_dict_field(self):
         pass
 
-    def test_generatorfield(self):
+    def test_generator_field(self):
         pass
 
-    def test_stringfield(self):
+    def test_string_field(self):
         pass
 
-    def test_integerfield(self):
+    def test_integer_field(self):
         pass
 
-    def test_floatfield(self):
+    def test_float_field(self):
         pass
 
     def test_this(self):
