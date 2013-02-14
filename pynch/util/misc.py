@@ -10,3 +10,7 @@ class MultiDict(dict):
         if len(args) == 1:
             for key, value in args[0]:
                 self.setdefault(key, []).append(value)
+
+
+type_of = lambda cls_or_obj: \
+                cls_or_obj if isinstance(cls_or_obj, type) else type(cls_or_obj)

@@ -1,12 +1,15 @@
 from query import QueryManager
-from util.field_utils import check_fields, get_field_value_or_default
 from util.misc import MultiDict
 from db import MockDatabase, MockConnection, DB
-from errors import (DelegationException, InheritanceException,
-                    DocumentValidationException, ConnectionException)
 import pymongo
 from bson.objectid import ObjectId
 import weakref
+
+from errors import (DelegationException, InheritanceException,
+                    DocumentValidationException, ConnectionException)
+
+from util.field_utils import (check_fields, field_to_mongo_tuple,
+                              get_field_value_or_default)
 
 
 class Field(object):
@@ -24,7 +27,7 @@ class Field(object):
         self.unique = unique
         self.unique_with = unique_with if unique_with else []
         self.primary_key = primary_key
-        self.choices = choices if choices else []
+        self.choices = choices
         self.help_text = help_text
 
     def __call__(self, name, model):
@@ -59,13 +62,14 @@ class Field(object):
             raise AttributeError
 
     def __str__(self):
-        unset_msg = '<%s %s field object not set>' % (type(self), id(self))
-        return getattr(self, 'name', unset_msg)
+        field_unset_msg = '<%s %s field object not set>' % (type(self), id(self))
+        return getattr(self, 'name', field_unset_msg)
 
     def _to_mongo(self, value):
+        mongo = self.validate(value)
         if self.primary_key:
-            return ObjectId(value)
-        return value
+            return ObjectId(mongo)
+        return mongo
 
     def _to_python(self, value):
         raise DelegationException('Define in a subclass')
@@ -105,11 +109,12 @@ class InformationDescriptor(object):
         except ConnectionException:
             self.connection = MockConnection(host, port)
 
-        # generate the actual database
+        # generate the actual database if it is named, otherwise
+        # create an in memory mockup
         self.db = self.connection[db_name] if \
                         db_name else MockDatabase(self.connection)
 
-        # and the collection we're going to use
+        # and make the collection we're going to use
         model_name = self.model.__name__
         self.collection = getattr(self.db, model_name)
 
@@ -122,11 +127,11 @@ class InformationDescriptor(object):
 
     def connect(self, host, port):
         """
-        First we need to establish a connection to the db. We
-        want the option of hooking into multiple databases but
-        we don't want to unecessarily spawn connections. Therefore
-        models which declare (or inherit) the same host and port
-        values in their respective _meta's will share a connection.
+        We need to establish a connection to the db and want the
+        option of hooking into multiple databases but don't want
+        to unecessarily spawn connections. Therefore models which
+        declare (or inherit) the same host and port values in their
+        respective _meta's will share a connection.
         """
         key = (host, port)
         if key not in self._connection_pool:
@@ -255,22 +260,21 @@ class Model(object):
 
     @property
     def pk(self):
-        """finds the model's primary key, if any"""
+        """
+        finds the model's primary key, if any
+        """
         for field in self._info.fields:
             if field.primary_key:
                 return getattr(self, field.name)
         return self._id if hasattr(self, '_id') else None
 
     def to_mongo(self):
+        # start at the top of the hierarchy and work your way down
         self.validate()
-        # lambda fcn that returns tuples of value:
-        # (db field, document field's value)
-        _to_mongo_tuple = lambda field: \
-                                (field.db_field or field.name,
-                                 field._to_mongo(getattr(self, field.name)))
 
         # build a mongo compatible dictionary
-        mongo = dict(_to_mongo_tuple(field) for field in self._info.fields)
+        mongo = dict(field_to_mongo_tuple(self, field) \
+                            for field in self._info.fields)
         return mongo
 
     @classmethod
@@ -278,9 +282,9 @@ class Model(object):
         python_fields = pymongo.son.SON()
 
         for field in cls._info.fields:
+            mongo_value = mongo[field.db_field or field.name]
             # (secretly) traverse the document hierarchy
-            python_fields[field.name] = \
-                field._to_python(mongo[field.db_field or field.name])
+            python_fields[field.name] = field._to_python(mongo_value)
 
         # cast the resulting dict to this particular model type
         return cls(**python_fields)
@@ -289,8 +293,7 @@ class Model(object):
         # validate fields, collecting exceptions in a dictionary
         exceptions = MultiDict(check_fields(self))
 
-        # return the document instance on success
-        # (ie exceptions is empty)
+        # return the document on success (ie exceptions is empty)
         if not exceptions:
             return self
 

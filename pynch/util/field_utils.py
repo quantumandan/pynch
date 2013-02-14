@@ -1,6 +1,14 @@
 from errors import ValidationException
 
 
+def field_to_mongo_tuple(document, field):
+    """
+    returns tuples with value (field name, mongo value)
+    """
+    return (field.db_field or field.name,
+            field._to_mongo(getattr(document, field.name)))
+
+
 def get_field_value_or_default(document, field):
     # must convert KeyErrors to AttributeErrors
     try:
@@ -22,10 +30,12 @@ def field_check_required(document, field):
 
 
 def field_check_choices(document, field):
-    if getattr(document, field.name, None) in field.choices:
+    if field.choices is None or \
+        getattr(document, field.name, None) in field.choices:
         return True
+
     raise ValidationException(
-        '%s could not be validated, choices are %s' % (field.name, field.choices))
+        '%s is not one of %s' % (field.name, field.choices))
 
 
 def field_check_unique_with(document, field):
@@ -35,14 +45,15 @@ def field_check_unique_with(document, field):
 
     # if the unique_value is None then the attribute hasn't
     # been set on the document so there is nothing to check
-    if not unique_value:
+    if unique_value is None:
         return True
 
     unique_with = field.unique_with
 
     # since unique_with can be either a string or a list
     # of strings, we must check and convert as needed
-    unique_with = unique_with if isinstance(unique_with, list) else [unique_with]
+    unique_with = unique_with if \
+            isinstance(unique_with, list) else [unique_with]
 
     for unique_field_name in unique_with:
         # just because a model declares a field doesn't mean
@@ -56,7 +67,8 @@ def field_check_unique_with(document, field):
 
         if document_value == unique_value:
             raise ValidationException(
-                '%s is not unique with field %s' % (field.name, unique_field_name))
+                '%s is not unique with field %s' % \
+                        (field.name, unique_field_name))
     return True
 
 
@@ -80,10 +92,10 @@ def check_fields(document):
             field_check_required(document, field)
         except ValidationException as e:
             yield (field.name, e)
-        # try:
-        #     field_check_choices(document, field)
-        # except ValidationException as e:
-        #     yield (field.name, e)
+        try:
+            field_check_choices(document, field)
+        except ValidationException as e:
+            yield (field.name, e)
         try:
             field_check_unique_with(document, field)
         except ValidationException as e:
