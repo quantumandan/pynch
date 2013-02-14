@@ -153,6 +153,46 @@ class InformationDescriptor(object):
 
 
 class ModelMetaclass(type):
+    def __new__(meta, name, bases, attrs):
+        if len(bases) > 1:
+            raise InheritanceException(
+                'Multiple inheritance not allowed')
+
+        # convert dictproxy to a dict
+        base_attrs = dict(bases[0].__dict__)
+
+        # default _meta
+        _meta = {'index': [], 'max_size': 10000000, 'database': DB()}
+
+        # pull out _meta modifier, then merge with that of current class
+        _meta.update(base_attrs.pop('_meta', {}))
+        _meta.update(attrs.pop('_meta', {}))
+
+        # initialize namespace with newly updated _meta
+        namespace = {'_meta': _meta}
+
+        # finally update namespace to reflect elements in
+        # the new class's __dict__
+        namespace.update(attrs)
+
+        return super(ModelMetaclass, meta).__new__(
+                            meta, name, bases, namespace)
+
+    def __init__(model, name, bases, attrs):
+        # Necessary so that field descriptors can determine
+        # what classes they are attached to.
+        for fieldname, field in attrs.items():
+            if isinstance(field, Field):
+                field(fieldname, model)
+
+        # information descriptor allows class level access to
+        # orm functionality
+        model._info = InformationDescriptor(model)
+        # DON'T FORGET TO CALL type's init
+        super(ModelMetaclass, model).__init__(name, bases, attrs)
+
+
+class Model(object):
     """
     For simplicity we disallow multiple inheritance among Models.
 
@@ -209,46 +249,6 @@ class ModelMetaclass(type):
     TODO: embrace the awesomeness that is a distributed database,
           and implement a way of "meta-indexing" the databases.
     """
-    def __new__(meta, name, bases, attrs):
-        if len(bases) > 1:
-            raise InheritanceException(
-                'Multiple inheritance not allowed')
-
-        # convert dictproxy to a dict
-        base_attrs = dict(bases[0].__dict__)
-
-        # default _meta
-        _meta = {'index': [], 'max_size': 10000000, 'database': DB()}
-
-        # pull out _meta modifier, then merge with that of current class
-        _meta.update(base_attrs.pop('_meta', {}))
-        _meta.update(attrs.pop('_meta', {}))
-
-        # initialize namespace with newly updated _meta
-        namespace = {'_meta': _meta}
-
-        # finally update namespace to reflect elements in
-        # the new class's __dict__
-        namespace.update(attrs)
-
-        return super(ModelMetaclass, meta).__new__(
-                            meta, name, bases, namespace)
-
-    def __init__(model, name, bases, attrs):
-        # Necessary so that field descriptors can determine
-        # what classes they are attached to.
-        for fieldname, field in attrs.items():
-            if isinstance(field, Field):
-                field(fieldname, model)
-
-        # information descriptor allows class level access to
-        # orm functionality
-        model._info = InformationDescriptor(model)
-        # DON'T FORGET TO CALL type's init
-        super(ModelMetaclass, model).__init__(name, bases, attrs)
-
-
-class Model(object):
     __metaclass__ = ModelMetaclass
 
     def __init__(self, **values):
@@ -310,3 +310,10 @@ class Model(object):
 
     def save(self, *args, **kwargs):
         self._info.collection.save(self.to_mongo())
+
+    def delete(self):
+        oid = ObjectId(self.pk) if self.pk else None
+        if oid is None:
+            raise Exception('Cant delete documents which '
+                            'have no _id or primary key')
+        self._info.collection.remove(oid)
