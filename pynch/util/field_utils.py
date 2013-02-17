@@ -5,8 +5,8 @@ def field_to_mongo_tuple(document, field):
     """
     returns tuples with value (field name, mongo value)
     """
-    return (field.db_field or field.name,
-            field._to_mongo(getattr(document, field.name, None)))
+    attr = getattr(document, field.name, None)
+    return (field.db_field or field.name, field.to_mongo(attr))
 
 
 def get_field_value_or_default(document, field):

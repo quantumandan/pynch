@@ -11,6 +11,16 @@ from pynch.util.field_utils import (check_fields, field_to_mongo_tuple,
 
 
 class Field(object):
+    def __new__(cls, *args, **modifiers):
+        """
+        necessary so that complex fields and reference fields
+        can import and bind the correct classes
+        """
+        field = super(Field, cls).__new__(cls)
+        outermost_frame = inspect.stack()[-1][0]
+        field._context = outermost_frame.f_locals.get('__name__', '')
+        return field
+
     def __init__(self, db_field=None, required=False, default=None,
                  unique=False, unique_with=None, primary_key=False,
                  choices=None, help_text=None):
@@ -19,7 +29,7 @@ class Field(object):
         manage the validation and typing of a document's attributes.
         """
         self.db_field = db_field if not primary_key else '_id'
-        self.required = required
+        self.required = required if not primary_key else True
         self.default = default
         # self.unique = bool(unique or unique_with)
         self.unique = unique
@@ -27,15 +37,9 @@ class Field(object):
         self.primary_key = primary_key
         self.choices = choices
         self.help_text = help_text
-        # necessary so that complex fields and reference fields
-        # can import the correct classes
-        outer_frame = inspect.stack()[-1][0]
-        self._context = outer_frame.f_locals['__name__']
 
-    def __call__(self, name, model):
+    def set(self, name, model):
         """
-        Called by ModelMetaclass.
-
         Lipstick to avoid having to retype `name` into the field's
         constructor. Also allows us to pass in the model which owns
         the field.
@@ -67,13 +71,19 @@ class Field(object):
         field_unset_msg = '<%s %s field object not set>' % (type(self), id(self))
         return getattr(self, 'name', field_unset_msg)
 
-    def _to_mongo(self, value):
+    def to_mongo(self, value):
+        # traverses the validation hierarchy top down
         mongo = self.validate(value)
+
+        # primary key must be of type `ObjectId`
         if self.primary_key:
-            return ObjectId(mongo)
+            return ObjectId(mongo) if not \
+                isinstance(mongo, ObjectId) else mongo
+
+        # already validated and not a primary key
         return mongo
 
-    def _to_python(self, value):
+    def to_python(self, value):
         raise DelegationException('Define in a subclass')
 
     def validate(self, data):
@@ -185,7 +195,7 @@ class ModelMetaclass(type):
         # what classes they are attached to.
         for fieldname, field in attrs.items():
             if isinstance(field, Field):
-                field(fieldname, model)
+                field.set(fieldname, model)
 
         # information descriptor allows class level access to
         # orm functionality
@@ -257,6 +267,10 @@ class Model(object):
         for k, v in values.items():
             setattr(self, k, v)
 
+        # everything must have some form of id
+        if not hasattr(self, '_id'):
+            self._id = ObjectId()
+
     @property
     def pk(self):
         """
@@ -278,17 +292,19 @@ class Model(object):
 
     @classmethod
     def to_python(cls, mongo):
-        python_fields = pymongo.son.SON()
+        python_fields = {}
 
         for field in cls._info.fields:
             mongo_value = mongo[field.db_field or field.name]
             # (secretly) traverse the document hierarchy
-            python_fields[field.name] = field._to_python(mongo_value)
+            python_fields[field.name] = field.to_python(mongo_value) if \
+                                             mongo_value is not None else None
 
         # cast the resulting dict to this particular model type
         return cls(**python_fields)
 
     def validate(self):
+        assert self.pk, 'Document is missing a primary key'
         # validate fields, collecting exceptions in a dictionary
         exceptions = MultiDict(check_fields(self))
 
@@ -316,3 +332,11 @@ class Model(object):
             raise Exception('Cant delete documents which '
                             'have no _id or primary key')
         self._info.collection.remove(oid)
+
+    @classmethod
+    def find_one(cls):
+        return cls.to_python(cls._info.collection.find_one())
+
+    @classmethod
+    def find(cls, **spec):
+        return cls._info.collection.find(**spec)

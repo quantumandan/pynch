@@ -18,9 +18,11 @@ class ValidationException(Exception):
 
 
 class FieldTypeException(ValidationException):
-    def __init__(self, actually_is=None, should_be=None):
+    def __init__(self, actually_is=None, should_be=None, *msg):
+        # discard msg
         super(FieldTypeException, self).__init__(
-            'value is of type %s but should be a (sub)type of %s' % (actually_is, should_be))
+            'value is of type %s but should be a (sub)type of %s' \
+                % (actually_is, should_be))
 
 
 class DocumentValidationException(ValidationException):
