@@ -19,19 +19,15 @@ class PynchTestSuite(unittest.TestCase):
         # print doc_a.field1
 
     def test_this(self):
-        jones = Gardener(name='Mr. Jones')
+        jones = BugStomper(name='Mr. Jones')
         jones.save()
         me = Gardener(name='Jim', instructor=jones)
         me.save()
         m = Gardener.find(name='Jim')
         x = [Gardener.to_python(y) for y in m]
         # print x[0].__dict__['instructor'].__dict__.keys()
-        print x[1]
-        print x[1].instructor.name
-        stomper = BugStomper(stomper=jones)
-        stomper.validate()
-        stomper.save()
-        garden = Garden(gardener=me, bug_stomper=stomper)
+        print x[0].instructor.__dict__
+        garden = Garden(gardener=me, stomper=jones)
         garden.acres = 0.25
         garden.flowers = [Flower(name='rose'), Flower(name='daisy')]
         garden.save()

@@ -9,34 +9,39 @@ class Base(Model):
 
 
 class Person(Base):
-    name = StringField(required=True, primary_key=True)
-
-
-class Bug(Base):
-    munched = ListField(ReferenceField('Flower'))
-
-
-class Flower(Base):
     name = StringField(required=True)
-
-
-class Gardener(Person):
-    instructor = ReferenceField('self')
-    picked = ListField(ReferenceField('Flower'))
-    planted = ListField(ReferenceField('Flower'), unique_with='picked')
 
     def __str__(self):
         return self.name
 
 
+class Bug(Base):
+    munched = ListField(ReferenceField('Flower'))
+    number_eyes = IntegerField()
+    number_legs = IntegerField()
+
+
+class Flower(Base):
+    name = StringField(required=True)
+
+    def __str__(self):
+        return self.name
+
+
+class Gardener(Person):
+    _meta = {'database': settings['Gardener_db']}
+    instructor = ReferenceField('self')
+    picked = ListField(ReferenceField(Flower))
+    planted = ListField(ReferenceField(Flower), unique_with='picked')
+
+
 class BugStomper(Gardener):
-    _meta = {'database': settings['BugStomper_db']}
-    stomper = ReferenceField('Gardener')
-    squashed = IntegerField()
+    squashed = ListField(ReferenceField(Bug))
 
 
 class Garden(Base):
+    _meta = {'database': settings['Garden_db']}
     acres = FloatField()
     gardener = ReferenceField(Gardener,  unique_with=['bug_stomper'])
-    flowers = ListField(ReferenceField('Flower'))
-    bug_stomper = ReferenceField(BugStomper)
+    flowers = ListField(ReferenceField(Flower))
+    stomper = ReferenceField(BugStomper)

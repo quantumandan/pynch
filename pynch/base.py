@@ -48,7 +48,6 @@ class Field(object):
         """
         self.name = name
         self.model = model
-        return self
 
     def __get__(self, document, model=None):
         # return field instance if accessed through the class
@@ -295,7 +294,7 @@ class Model(object):
 
         # everything must have some form of id
         if not self.pk:
-            self._id = ObjectIdField(primary_key=True)
+            self._id = ObjectId()
 
     @property
     def pk(self):

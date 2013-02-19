@@ -58,7 +58,7 @@ class ComplexField(Field):
             self.field.set(name, model)
         if isinstance(self.field, ReferenceField):
             self.field.set(name, self.field.reference)
-        return super(ComplexField, self).set(name, model)
+        super(ComplexField, self).set(name, model)
 
     def is_dynamic(self):
         return isinstance(self.field, DynamicField)
@@ -233,21 +233,22 @@ class ReferenceField(Field):
                 self.model if 'self' == model_name else \
                     (import_class(model_name, self._context) or model_name)
 
-        # only allow references to documents, if reference is a basestring
-        # then the referent has not been set so try that now or defer again
-        if not isinstance(self.reference, basestring) and \
-            not issubclass(self.reference, Model):
-            raise FieldTypeException(type_of(self.reference), Model)
-
-        # collect backrefs in a set if rebinding has not been defered
+        #  if reference is a basestring then the referent has not been set
         if not isinstance(self.reference, basestring):
+            # only allow references to documents
+            if not issubclass(self.reference, Model):
+                raise FieldTypeException(type_of(self.reference), Model)
+
+            # only add backrefs when the reference has been rebound
             self.reference._info.backrefs.setdefault(
                             self.name, set()).add(self.model)
-        return self
 
     def __get__(self, document, model=None):
+        # does lazy rebinding of references in the event that
+        # the deed has not already been done
         if issubclass(self.model, basestring):
             self.set(self.name, model)
+        # get the value from the document's dictionary
         return super(ReferenceField, self).__get__(document, model)
 
     def __delete__(self, document):
