@@ -82,16 +82,17 @@ class Field(object):
 
     def to_save(self, value):
         # traverses the validation hierarchy top down
-        # X = self.validate(value)
-        if isinstance(value, Model):
-            value.save()
+        X = self.validate(value)
+
+        if isinstance(X, Model):
+            X.save()
 
         # primary key must be of type `ObjectId`
         if self.primary_key:
-            return ObjectId(value) if not isinstance(value, ObjectId) else value
+            return ObjectId(X) if not isinstance(X, ObjectId) else X
 
         # already validated and not a primary key
-        return value
+        return X
 
     def to_python(self, value):
         raise DelegationException('Define in a subclass')
@@ -308,8 +309,8 @@ class Model(object):
             # `castable` must either belong to a subclass of the
             # current model, or the current moddel must be a sublcass
             # of castable's model
-            assert (isinstance(castable, self.__class__) or \
-                    isinstance(self, castable.__class__))
+            assert (isinstance(castable, type(self)) or \
+                    isinstance(self, type(castable)))
             values.update(castable.__dict__)
 
         for k, v in values.items():

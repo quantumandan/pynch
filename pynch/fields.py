@@ -6,17 +6,11 @@ from types import GeneratorType
 import re
 
 
-BASE_TYPES = (basestring, int, float, bool)
-
-
 class DynamicField(Field):
     """
     Marker class for fields that can take data of any type.
     Does no actual validation.
     """
-    def to_save(self, data):
-        return data
-
     def validate(self, data):
         return data
 
@@ -28,8 +22,7 @@ class SimpleField(Field):
 
     TODO: PY3 compatibility for simple types.
     """
-    def to_save(self, data):
-        return data
+    BASE_TYPES = (basestring, int, float, bool, long)
 
     def validate(self, data):
         return data
@@ -63,15 +56,12 @@ class ComplexField(Field):
     def is_dynamic(self):
         return isinstance(self.field, DynamicField)
 
-    def to_mongo_caller(self, x):
-        X = self.field.to_save(x)
-        return super(ComplexField, self).to_save(X)
-
-    def to_python_caller(self, x):
-        return x if isinstance(x, BASE_TYPES) else self.field.to_python(x)
-
     def validate(self, data):
         raise DelegationException('Define in a subclass')
+
+    def _to_python_caller(self, x):
+        basetypes = SimpleField.BASE_TYPES
+        return x if isinstance(x, basetypes) else self.field.to_python(x)
 
 
 class ListField(ComplexField):
@@ -99,13 +89,13 @@ class ListField(ComplexField):
         super(ListField, self).__set__(document, value)
 
     def to_save(self, lst):
-        if lst is None:
-            return []
-        X = [self.field.to_save(x) for x in lst]
+        lst = lst if lst else []
+        to_save = self.field.to_save
+        X = [to_save(x) for x in lst]            # optimization
         return super(ListField, self).to_save(X)
 
     def to_python(self, lst):
-        pc = self.to_python_caller               # optimization
+        pc = self._to_python_caller              # optimization
         return [pc(x) for x in lst]
 
     def validate(self, lst):
@@ -125,13 +115,13 @@ class DictField(ComplexField):
         super(DictField, self).__set__(document, value)
 
     def to_save(self, dct):
-        if dct is None:
-            return {}
-        mc = self.to_mongo_caller                # optimization
-        return dict((k, mc(v)) for k, v in self.validate(dct).items())
+        dct = dct if dct else {}
+        to_save = self.field.to_save             # optimization
+        X = dict((k, to_save(v)) for k, v in dct.items())
+        return super(DictField, self).to_save(X)
 
     def to_python(self, dct):
-        pc = self.to_python_caller               # optimization
+        pc = self._to_python_caller              # optimization
         return dict((k, pc(v)) for k, v in dct.items())
 
     def validate(self, dct):
@@ -150,19 +140,19 @@ class GeneratorField(ComplexField):
         super(GeneratorField, self).__set__(document, value)
 
     def to_save(self, generator):
-        if generator is None:
-            return []
-        mc = self.to_mongo_caller                # optimization
-        return [mc(x) for x in self.validate(generator)]
+        generator = generator if generator else []
+        to_save = self.field.to_save             # optimization
+        X = (to_save(x) for x in generator)
+        return super(GeneratorField, self).to_save(X)
 
     def to_python(self, lst):
-        pc = self.to_python_caller               # optimization
+        pc = self._to_python_caller              # optimization
         return (pc(x) for x in lst)
 
-    def validate(self, iterable):
-        if iterable is not None:
+    def validate(self, generator):
+        if generator is not None:
             validate = self.field.validate       # optimization
-            return (validate(x) for x in iterable)
+            return [validate(x) for x in generator]
 
 
 class SetField(ComplexField):
@@ -176,13 +166,13 @@ class SetField(ComplexField):
         super(SetField, self).__set__(document, value)
 
     def to_save(self, S):
-        if S is None:
-            return []
-        X = [self.field.to_save(x) for x in S]
+        S = S if S else set()
+        to_save = self.field.to_save             # optimization
+        X = [to_save(x) for x in S]
         return super(SetField, self).to_save(X)
 
     def to_python(self, lst):
-        pc = self.to_python_caller               # optimization
+        pc = self._to_python_caller              # optimization
         return set(pc(s) for s in lst)
 
     def validate(self, iterable):
@@ -256,14 +246,15 @@ class ReferenceField(Field):
         super(ReferenceField, self).__delete__(document)
 
     def to_save(self, document):
-        mongo_doc = super(ReferenceField, self).to_save(document)
-        if mongo_doc is not None:
+        # notice that `ReferenceField.to_save` does not call
+        # Field's `to_save`
+        if document is not None:
             name, host, port = self.reference._meta['database']
             # turns the document into a DBRef
-            return DBRef(self.reference.__name__, mongo_doc.pk,
+            return DBRef(self.reference.__name__, document.pk,
                          database=name, host=host, port=port)
         # in this case, document will be None
-        return mongo_doc
+        return document
 
     def to_python(self, dbref):
         # fails silently, not optimal
