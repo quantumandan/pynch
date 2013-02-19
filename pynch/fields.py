@@ -1,5 +1,5 @@
 from pynch.errors import FieldTypeException, DelegationException, ValidationException
-from pynch.util.misc import type_of, import_class
+from pynch.util.misc import type_of, import_class, UnboundReference
 from pynch.base import Field, Model
 from bson.dbref import DBRef
 from types import GeneratorType
@@ -53,11 +53,6 @@ class ComplexField(Field):
         super(ComplexField, self).__init__(**params)
 
     def set(self, name, model):
-        # if `self.field` is a string (absolute import path) to
-        # a model, then rebind the attribute with the correct model.
-        if isinstance(self.field, basestring):
-            self.field = import_class(self.field, self._context)
-
         # initialize the type of field inside the container
         if isinstance(self.field, (SimpleField, DynamicField)):
             self.field.set(name, model)
@@ -69,8 +64,10 @@ class ComplexField(Field):
         return isinstance(self.field, DynamicField)
 
     def to_mongo_caller(self, x):
+        # return x.to_mongo() if \
+        #     issubclass(self.field, Model) else self.field.to_mongo(x)
         return x.to_mongo() if \
-            issubclass(self.field, Model) else self.field.to_mongo(x)
+            isinstance(self.field, Model) else self.field.to_mongo(x)
 
     def to_python_caller(self, x):
         return x if isinstance(x, BASE_TYPES) else self.field.to_python(x)
@@ -105,6 +102,7 @@ class ListField(ComplexField):
         super(ListField, self).__set__(document, value)
 
     def to_mongo(self, lst):
+        if lst is None: return []
         mc = self.to_mongo_caller                # optimization
         return [mc(x) for x in self.validate(lst)]
 
@@ -131,6 +129,7 @@ class DictField(ComplexField):
         super(DictField, self).__set__(document, value)
 
     def to_mongo(self, dct):
+        if dct is None: return {}
         mc = self.to_mongo_caller                # optimization
         return dict((k, mc(v)) for k, v in self.validate(dct).items())
 
@@ -155,6 +154,7 @@ class GeneratorField(ComplexField):
         super(GeneratorField, self).__set__(document, value)
 
     def to_mongo(self, generator):
+        if generator is None: return []
         mc = self.to_mongo_caller                # optimization
         return [mc(x) for x in self.validate(generator)]
 
@@ -176,6 +176,7 @@ class SetField(ComplexField):
         super(SetField, self).__set__(document, value)
 
     def to_mongo(self, S):
+        if S is None: return []
         mc = self.to_mongo_caller                # optimization
         return [mc(x) for x in self.validate(S)]
 
@@ -224,22 +225,30 @@ class ReferenceField(Field):
     def set(self, name, model):
         super(ReferenceField, self).set(name, model)
         # rebind reference with an actual class if reference is
-        # a fully qualified import path (str) or is 'self'
+        # an import path (str) or is 'self', otherwise reference
+        # hasn't been read into memory yet, so defer rebinding
         if isinstance(self.reference, basestring):
             model_name = self.reference
             self.reference = \
                 self.model if 'self' == model_name else \
-                    import_class(model_name, self._context)
+                    (import_class(model_name, self._context) or model_name)
 
-        # only allow references to documents
-        if not issubclass(self.reference, Model):
+        # only allow references to documents, if reference is a basestring
+        # then the referent has not been set so try that now or defer again
+        if not isinstance(self.reference, basestring) and \
+            not issubclass(self.reference, Model):
             raise FieldTypeException(type_of(self.reference), Model)
 
-        # collect backrefs in a set
-        self.reference._info.backrefs.setdefault(
-                        self.name, set()).add(self.model)
-
+        # collect backrefs in a set if rebinding has not been defered
+        if not isinstance(self.reference, basestring):
+            self.reference._info.backrefs.setdefault(
+                            self.name, set()).add(self.model)
         return self
+
+    def __get__(self, document, model=None):
+        if issubclass(self.model, basestring):
+            self.set(self.name, model)
+        return super(ReferenceField, self).__get__(document, model)
 
     def __delete__(self, document):
         self.reference._info.backrefs[self.name].remove(self.model)

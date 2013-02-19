@@ -13,7 +13,7 @@ class ConnectionException(ConnectionFailure):
     pass
 
 
-class ValidationException(Exception):
+class ValidationException(ValueError):
     pass
 
 

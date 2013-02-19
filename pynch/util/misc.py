@@ -12,6 +12,9 @@ class MultiDict(dict):
                 self.setdefault(key, []).append(value)
 
 
+UnboundReference = type('UnboundReference', (), {})
+
+
 def import_class(to_import, context=''):
     if '.' in to_import:
         d = to_import.rfind(".")
@@ -20,8 +23,20 @@ def import_class(to_import, context=''):
     else:
         module, clsname = context, to_import
     m = __import__(module, [clsname])
-    return getattr(m, clsname)
+    return getattr(m, clsname, None)
 
 
 type_of = lambda cls_or_obj: \
                 cls_or_obj if isinstance(cls_or_obj, type) else type(cls_or_obj)
+
+
+def raise_(exc):
+    """
+    Functional version of `raise`
+    """
+    raise exc
+
+
+def dir_(thing):
+    from_name = lambda name: (name, getattr(thing, name))
+    return dict(from_name(name) for name in dir(thing))

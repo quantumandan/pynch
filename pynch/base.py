@@ -5,7 +5,7 @@ from bson.objectid import ObjectId
 import weakref
 import inspect
 from pynch.errors import *
-from pynch.util.misc import MultiDict
+from pynch.util.misc import MultiDict, dir_
 from pynch.util.field_utils import (check_fields, field_to_mongo_tuple,
                                     get_field_value_or_default)
 
@@ -33,6 +33,8 @@ class Field(object):
         self.default = default
         # self.unique = bool(unique or unique_with)
         self.unique = unique
+        # since unique_with can be either a string or a list
+        # of strings, we must check and convert as needed
         self.unique_with = unique_with if unique_with else []
         self.primary_key = primary_key
         self.choices = choices
@@ -86,11 +88,36 @@ class Field(object):
     def to_python(self, value):
         raise DelegationException('Define in a subclass')
 
-    def validate(self, data):
+    def validate(self, value):
         raise DelegationException('Define in a subclass')
 
     def is_set(self):
         return hasattr(self, 'name')
+
+
+class ObjectIdField(Field):
+    def set(self, name, model):
+        super(ObjectIdField, self).set(name, model)
+
+        for field in model._info.fields:
+            if field.primary_key:
+                assert (name == field.name) or \
+                       (field.db_field == '_id')
+
+    def to_mongo(self, value):
+        # traverses the validation hierarchy top down
+        mongo = self.validate(value)
+
+        # primary key must be of type `ObjectId`
+        if self.primary_key:
+            return ObjectId(mongo) if not \
+                isinstance(mongo, ObjectId) else mongo
+
+    def to_python(self, value):
+        return value
+
+    def validate(self, value):
+        return value
 
 
 class InformationDescriptor(object):
@@ -160,8 +187,7 @@ class InformationDescriptor(object):
 
     @property
     def fields(self):
-        model_dict = self.model.__dict__
-        return [v for v in model_dict.values() if isinstance(v, Field)]
+        return [v for v in dir_(self.model).values() if isinstance(v, Field)]
 
 
 class ModelMetaclass(type):
@@ -268,8 +294,8 @@ class Model(object):
             setattr(self, k, v)
 
         # everything must have some form of id
-        if not hasattr(self, '_id'):
-            self._id = ObjectId()
+        if not self.pk:
+            self._id = ObjectIdField(primary_key=True)
 
     @property
     def pk(self):
