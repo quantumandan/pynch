@@ -256,7 +256,6 @@ class ReferenceField(Field):
         if self.validate(document) is not None:
             name, host, port = self.reference._meta['database']
             # turns the document into a DBRef
-            # TODO: make references cross database compatible
             return DBRef(self.reference.__name__, document.pk,
                          database=name, host=host, port=port)
         # in this case, document will be None
