@@ -101,31 +101,6 @@ class Field(object):
         raise DelegationException('Define in a subclass')
 
 
-# class ObjectIdField(Field):
-#     def set(self, name, model):
-#         super(ObjectIdField, self).set(name, model)
-
-#         for field in model._pynch.fields:
-#             if field.primary_key:
-#                 assert (name == field.name) or \
-#                        (field.db_field == '_id')
-
-#     def to_save(self, value):
-#         # traverses the validation hierarchy top down
-#         mongo = self.validate(value)
-
-#         # primary key must be of type `ObjectId`
-#         if self.primary_key:
-#             return ObjectId(mongo) if not \
-#                 isinstance(mongo, ObjectId) else mongo
-
-#     def to_python(self, value):
-#         return value
-
-#     def validate(self, value):
-#         return value
-
-
 class InformationDescriptor(object):
     """
     Among other things, is responsible for generating and managing
