@@ -187,6 +187,18 @@ class InformationDescriptor(object):
         # otherwise just get what's already there
         return self._connection_pool[key]
 
+    def to_python(self, mongo):
+        python_fields = {}
+        for field in self.fields:
+            # rememeber mongo info is stored with key `field.db_field`
+            # if it is different from `field.name`
+            mongo_value = mongo[field.db_field or field.name]
+            # (secretly) traverse the document hierarchy top down
+            python_fields[field.name] = field.to_python(mongo_value) if \
+                                             mongo_value is not None else None
+        # cast the resulting dict to this particular model type
+        return self.model(**python_fields)
+
     @property
     def objects(self):
         return QueryManager(self.model)
@@ -227,7 +239,10 @@ class ModelMetaclass(type):
         # what classes they are attached to.
         for fieldname, field in attrs.items():
             if isinstance(field, Field):
-                assert fieldname != 'pk'
+                # `pk`, `validate`, `save`, and `delete` are reserved
+                # for pynch, everything else is fair game
+                assert fieldname not in ('pk', 'validate',
+                                        'save', 'delete')
                 field.set(fieldname, model)
 
         # information descriptor allows class level access to
@@ -270,7 +285,6 @@ class Model(object):
     host     := string            (default = 'localhost')
     port     := integer           (default = 27017)
 
-    TODO:
     An interesting application, you can build a distributed,
     NoSQL database like so:
 
@@ -311,7 +325,7 @@ class Model(object):
             # deserialize DBRefs if possible
             if isinstance(v, DBRef):
                 cls = self.__class__
-                v = getattr(cls, k).to_python(v) if hasattr(cls, k) else \
+                v = getattr(cls, k)._info.to_python(v) if hasattr(cls, k) else \
                         raise_(DocumentValidationException('Cannot resolve dbref'))
 
             # setattr must be called to activate the descriptors,
@@ -332,19 +346,6 @@ class Model(object):
                 return getattr(self, field.name)
         # default to _id or give up
         return self._id if hasattr(self, '_id') else None
-
-    @classmethod
-    def to_python(cls, mongo):
-        python_fields = {}
-        for field in cls._info.fields:
-            # rememeber mongo info is stored with key `field.db_field`
-            # if it is different from `field.name`
-            mongo_value = mongo[field.db_field or field.name]
-            # (secretly) traverse the document hierarchy top down
-            python_fields[field.name] = field.to_python(mongo_value) if \
-                                             mongo_value is not None else None
-        # cast the resulting dict to this particular model type
-        return cls(**python_fields)
 
     def validate(self):
         assert self.pk, 'Document is missing a primary key'
@@ -367,7 +368,7 @@ class Model(object):
         # build a mongo compatible dictionary
         mongo = dict(field_to_save_tuple(document, field) \
                                 for field in self._info.fields)
-        self._info.collection.save(mongo, **kwargs)
+        return self._info.collection.save(mongo, **kwargs)
 
     def delete(self):
         oid = ObjectId(self.pk) if self.pk else None

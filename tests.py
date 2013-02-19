@@ -1,34 +1,27 @@
 import unittest
 from pynch.base import Model
+from pynch.db import DB
 from pynch.fields import *
 from pynch.errors import *
 from test_project import *
 
 
+class TestModel(Model):
+    _meta = {'database': DB(name='test')}
+
+
 class PynchTestSuite(unittest.TestCase):
-    # def test_required__simple_types(self):
-    #     class Doc_A(Model):
-    #         _meta = {'database': DB('test', 'localhost', 27017)}
-    #         field1 = StringField(required=True)
-    #         field2 = IntegerField(required=True)
-
-    #     document = Doc_A(field1='hello', field2=1)
-    #     document.validate()
-    #     document.save()
-    #     doc_a = Doc_A.find_one()
-        # print doc_a.field1
-
     def test_this(self):
         jones = BugStomper(name='Mr. Jones')
-        jones.save()
+        # jones.save()
         me = Gardener(name='Jim', instructor=jones)
-        me.save()
+        # me.save()
         garden = Garden(gardener=me, stomper=jones)
         garden.acres = 0.25
         garden.flowers = [Flower(name='rose'), Flower(name='daisy')]
         garden.save()
         x = Garden._info.objects.find_one(acres=0.25)
-        print x.flowers[0]
+        # print x.flowers[0].name
 
     def test_no_pk(self):
         pass
@@ -66,7 +59,7 @@ class PynchTestSuite(unittest.TestCase):
 
 class StringFieldTestSuite(unittest.TestCase):
     def test_string_field(self):
-        class A(Model):
+        class A(TestModel):
             field = StringField()
 
         a = A()
@@ -79,30 +72,31 @@ class StringFieldTestSuite(unittest.TestCase):
         self.assertRaises(FieldTypeException, lambda: A(field=123))
 
     def test_string_field_as_pk(self):
-        class A(Model):
+        class A(TestModel):
             field = StringField(primary_key=True)
 
         a = A(field='abc')
         self.assertEquals(a.pk, 'abc')
 
     def test_string_field_as_db_field(self):
-        class A(Model):
+        class A(TestModel):
             field = StringField(db_field='new_field')
 
         a = A(field='abc')
-        mongo = a.save()
+        mongo_id = a.save()
+        mongo = A._info.collection.find_one({'_id': mongo_id})
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == 'abc')
 
     def test_string_field_required(self):
-        class A(Model):
+        class A(TestModel):
             field = StringField(required=True)
 
         a = A()
         self.assertRaises(DocumentValidationException, a.validate)
 
     def test_string_field_choices(self):
-        class A(Model):
+        class A(TestModel):
             field = StringField(choices=['a', 'b', 'c'])
         a = A()
         for choice in A.field.choices:
@@ -113,7 +107,7 @@ class StringFieldTestSuite(unittest.TestCase):
         self.assertRaises(ValidationException, a.validate)
 
     def test_string_field_unique_with(self):
-        class A(Model):
+        class A(TestModel):
             field1 = StringField(unique_with='field2')
             field2 = StringField()
 
@@ -126,13 +120,13 @@ class StringFieldTestSuite(unittest.TestCase):
         self.assertRaises(DocumentValidationException, a.validate)
 
     def test_string_field_unique(self):
-        class A(Model):
+        class A(TestModel):
             field = StringField()
 
 
 class IntegerFieldTestSuite(unittest.TestCase):
     def test_integer_field(self):
-        class A(Model):
+        class A(TestModel):
             field = IntegerField()
 
         a = A()
@@ -145,30 +139,31 @@ class IntegerFieldTestSuite(unittest.TestCase):
         self.assertRaises(FieldTypeException, lambda: A(field='abc'))
 
     def test_integer_field_as_pk(self):
-        class A(Model):
+        class A(TestModel):
             field = IntegerField(primary_key=True)
 
         a = A(field=123)
         self.assertEquals(a.pk, 123)
 
     def test_integer_field_as_db_field(self):
-        class A(Model):
+        class A(TestModel):
             field = IntegerField(db_field='new_field')
 
         a = A(field=123)
-        mongo = a.save()
+        mongo_id = a.save()
+        mongo = A._info.collection.find_one({'_id': mongo_id})
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == 123)
 
     def test_integer_field_required(self):
-        class A(Model):
+        class A(TestModel):
             field = IntegerField(required=True)
 
         a = A()
         self.assertRaises(DocumentValidationException, a.validate)
 
     def test_integer_field_choices(self):
-        class A(Model):
+        class A(TestModel):
             field = IntegerField(choices=[1, 2, 3])
         a = A()
         for choice in A.field.choices:
@@ -179,7 +174,7 @@ class IntegerFieldTestSuite(unittest.TestCase):
         self.assertRaises(DocumentValidationException, a.validate)
 
     def test_integer_field_unique_with(self):
-        class A(Model):
+        class A(TestModel):
             field1 = IntegerField(unique_with='field2')
             field2 = IntegerField()
 
@@ -192,13 +187,13 @@ class IntegerFieldTestSuite(unittest.TestCase):
         self.assertRaises(DocumentValidationException, a.validate)
 
     def test_integer_field_unique(self):
-        class A(Model):
+        class A(TestModel):
             field = IntegerField()
 
 
 class FloatFieldTestSuite(unittest.TestCase):
     def test_float_field(self):
-        class A(Model):
+        class A(TestModel):
             field = FloatField()
 
         a = A()
@@ -211,30 +206,31 @@ class FloatFieldTestSuite(unittest.TestCase):
         self.assertRaises(FieldTypeException, lambda: A(field='abc'))
 
     def test_float_field_as_pk(self):
-        class A(Model):
+        class A(TestModel):
             field = FloatField(primary_key=True)
 
         a = A(field=0.123)
         self.assertEquals(a.pk, 0.123)
 
     def test_float_field_as_db_field(self):
-        class A(Model):
+        class A(TestModel):
             field = FloatField(db_field='new_field')
 
         a = A(field=0.123)
-        mongo = a.save()
+        mongo_id = a.save()
+        mongo = A._info.collection.find_one({'_id': mongo_id})
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == 0.123)
 
     def test_float_field_required(self):
-        class A(Model):
+        class A(TestModel):
             field = FloatField(required=True)
 
         a = A()
         self.assertRaises(DocumentValidationException, a.validate)
 
     def test_float_field_choices(self):
-        class A(Model):
+        class A(TestModel):
             field = FloatField(choices=[1.0, 2.0, 3.0])
         a = A()
         for choice in A.field.choices:
@@ -245,7 +241,7 @@ class FloatFieldTestSuite(unittest.TestCase):
         self.assertRaises(DocumentValidationException, a.validate)
 
     def test_float_field_unique_with(self):
-        class A(Model):
+        class A(TestModel):
             field1 = FloatField(unique_with='field2')
             field2 = FloatField()
 
@@ -258,13 +254,13 @@ class FloatFieldTestSuite(unittest.TestCase):
         self.assertRaises(DocumentValidationException, a.validate)
 
     def test_float_field_unique(self):
-        class A(Model):
+        class A(TestModel):
             field = FloatField()
 
 
 class BooleanFieldTestSuite(unittest.TestCase):
     def test_boolean_field(self):
-        class A(Model):
+        class A(TestModel):
             field = BooleanField()
 
         a = A()
@@ -282,23 +278,24 @@ class BooleanFieldTestSuite(unittest.TestCase):
         """
 
     def test_boolean_field_as_db_field(self):
-        class A(Model):
+        class A(TestModel):
             field = BooleanField(db_field='new_field')
 
         a = A(field=False)
-        mongo = a.save()
+        mongo_id = a.save()
+        mongo = A._info.collection.find_one({'_id': mongo_id})
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == False)
 
     def test_boolean_field_required(self):
-        class A(Model):
+        class A(TestModel):
             field = BooleanField(required=True)
 
         a = A()
         self.assertRaises(DocumentValidationException, a.validate)
 
     def test_boolean_field_choices(self):
-        class A(Model):
+        class A(TestModel):
             field = BooleanField(choices=[True, False])
         a = A()
         for choice in A.field.choices:
@@ -308,7 +305,7 @@ class BooleanFieldTestSuite(unittest.TestCase):
         self.assertRaises(FieldTypeException, lambda: setattr(a, 'field', 5))
 
     def test_boolean_field_unique_with(self):
-        class A(Model):
+        class A(TestModel):
             field1 = BooleanField(unique_with='field2')
             field2 = BooleanField()
 
@@ -321,10 +318,10 @@ class BooleanFieldTestSuite(unittest.TestCase):
         self.assertRaises(DocumentValidationException, a.validate)
 
     def test_boolean_field_unique(self):
-        class A(Model):
+        class A(TestModel):
             field = BooleanField()
 
-    #     class Phoo(Model):
+    #     class Phoo(TestModel):
     #         _meta = {'database': DB('test', 'localhost', 27017)}
     #         hell = ListField(StringField())
     #         bliss = ListField(ReferenceField(self.Gardener))

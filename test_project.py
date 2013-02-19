@@ -42,6 +42,6 @@ class BugStomper(Gardener):
 class Garden(Base):
     _meta = {'database': settings['Garden_db']}
     acres = FloatField()
-    gardener = ReferenceField(Gardener,  unique_with=['bug_stomper'])
+    gardener = ReferenceField(Gardener,  unique_with=['stomper'])
     flowers = ListField(ReferenceField(Flower))
     stomper = ReferenceField(BugStomper)

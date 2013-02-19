@@ -22,10 +22,12 @@ class QueryManager(object):
         self.model._info.collection.remove(oid)
 
     def find(self, **spec):
-        return self.model.to_python(self.model._info.collection.find(**spec))
+        return self.model._info.to_python(
+            self.model._info.collection.find(**spec))
 
     def find_one(self, **spec):
-        return self.model.to_python(self.model._info.collection.find_one(spec))
+        return self.model._info.to_python(
+            self.model._info.collection.find_one(spec))
 
 
 class Query(object):
