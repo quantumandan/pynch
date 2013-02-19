@@ -97,7 +97,6 @@ class ListField(ComplexField):
     def __set__(self, document, value):
         if not isinstance(value, list):
             raise FieldTypeException(type(value), list)
-
         super(ListField, self).__set__(document, value)
 
     def to_mongo(self, lst):
@@ -123,7 +122,6 @@ class DictField(ComplexField):
     def __set__(self, document, value):
         if not isinstance(value, dict):
             raise FieldTypeException(type(value), dict)
-
         super(DictField, self).__set__(document, value)
 
     def to_mongo(self, dct):
@@ -148,7 +146,6 @@ class GeneratorField(ComplexField):
     def __set__(self, document, value):
         if not isinstance(value, GeneratorType):
             raise FieldTypeException(type(value), GeneratorType)
-
         super(GeneratorField, self).__set__(document, value)
 
     def to_mongo(self, generator):
@@ -167,10 +164,13 @@ class GeneratorField(ComplexField):
 
 
 class SetField(ComplexField):
+    def __init__(self, field=None, disjoint_with=None, **modifiers):
+        self.disjoint_with = disjoint_with
+        super(SetField, self).__init__(**modifiers)
+
     def __set__(self, document, value):
         if not isinstance(value, set):
             raise FieldTypeException(type(value), set)
-
         super(SetField, self).__set__(document, value)
 
     def to_mongo(self, S):
@@ -273,7 +273,9 @@ class ReferenceField(Field):
         return value
 
     def dereference(self, dbref):
-        return self.model._info.db.dereference(dbref)
+        key = (dbref.host, dbref.port)
+        db = self.model._info._connection_pool[key][dbref.database]
+        return db.dereference(dbref)
 
 
 class StringField(SimpleField):

@@ -32,7 +32,7 @@ class Gardener(Person):
     _meta = {'database': settings['Gardener_db']}
     instructor = ReferenceField('self')
     picked = SetField(ReferenceField(Flower))
-    planted = SetField(ReferenceField(Flower), unique_with='picked')
+    planted = SetField(ReferenceField(Flower), disjoint_with='picked')
 
 
 class BugStomper(Gardener):

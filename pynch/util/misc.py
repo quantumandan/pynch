@@ -21,10 +21,18 @@ def import_class(to_import, context=''):
     # such things occur when running a module as a script,
     # in which case context would be `__main__`
     if '.' not in to_import:
-        module, clsname = context, to_import
+        module  = context
+        clsname = to_import
     else:
-        d, n = to_import.rfind('.'), len(to_import)
-        module, clsname = to_import[0:d], to_import[d+1:n]
+        # rightmost period demarcates the end of the import
+        # path and the start of the class name
+        d = to_import.rfind('.')
+        # gets the full number of characters in the import path
+        n = len(to_import)
+        # everything before the rightmost period
+        module  = to_import[0:d]
+        # everything after the rightmost period
+        clsname = to_import[d+1:n]
 
     # same as `from module import clsname`
     m = __import__(module, [clsname])
@@ -46,5 +54,9 @@ def raise_(exc):
 
 
 def dir_(thing):
+    """
+    retrieves the actual values of attribtes referenced by `dir`
+    and puts them into a dictionary
+    """
     from_name_tuple = lambda name: (name, getattr(thing, name))
     return dict(from_name_tuple(name) for name in dir(thing))

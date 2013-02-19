@@ -21,8 +21,11 @@ class QueryManager(object):
                             'have no _id or primary key')
         self.model._info.collection.remove(oid)
 
-    def find_one(self):
-        return self.model.to_python(self.model._info.collection.find_one())
+    def find(self, **spec):
+        return self.model.to_python(self.model._info.collection.find(**spec))
+
+    def find_one(self, **spec):
+        return self.model.to_python(self.model._info.collection.find_one(spec))
 
 
 class Query(object):
