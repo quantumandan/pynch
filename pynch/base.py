@@ -7,7 +7,7 @@ import weakref
 import inspect
 from pynch.errors import *
 from pynch.util.misc import MultiDict, dir_, raise_
-from pynch.util.field_utils import (check_fields, field_to_mongo_tuple,
+from pynch.util.field_utils import (check_fields, field_to_save_tuple,
                                     get_field_value_or_default)
 
 
@@ -54,6 +54,9 @@ class Field(object):
         self.name = name
         self.model = model
 
+    def is_set(self):
+        return hasattr(self, 'name')
+
     def __get__(self, document, model=None):
         # return field instance if accessed through the class
         if document is None:
@@ -77,17 +80,19 @@ class Field(object):
         field_unset_msg = '<%s %s field object not set>' % (type(self), id(self))
         return getattr(self, 'name', field_unset_msg)
 
-    def to_mongo(self, value):
+    def to_save(self, value):
         # traverses the validation hierarchy top down
-        mongo = self.validate(value)
+        # X = self.validate(value)
+        X = value
+        if isinstance(X, Model):
+            X.save()
 
         # primary key must be of type `ObjectId`
         if self.primary_key:
-            return ObjectId(mongo) if not \
-                isinstance(mongo, ObjectId) else mongo
+            return ObjectId(X) if not isinstance(X, ObjectId) else X
 
         # already validated and not a primary key
-        return mongo
+        return X
 
     def to_python(self, value):
         raise DelegationException('Define in a subclass')
@@ -95,33 +100,30 @@ class Field(object):
     def validate(self, value):
         raise DelegationException('Define in a subclass')
 
-    def is_set(self):
-        return hasattr(self, 'name')
 
+# class ObjectIdField(Field):
+#     def set(self, name, model):
+#         super(ObjectIdField, self).set(name, model)
 
-class ObjectIdField(Field):
-    def set(self, name, model):
-        super(ObjectIdField, self).set(name, model)
+#         for field in model._info.fields:
+#             if field.primary_key:
+#                 assert (name == field.name) or \
+#                        (field.db_field == '_id')
 
-        for field in model._info.fields:
-            if field.primary_key:
-                assert (name == field.name) or \
-                       (field.db_field == '_id')
+#     def to_save(self, value):
+#         # traverses the validation hierarchy top down
+#         mongo = self.validate(value)
 
-    def to_mongo(self, value):
-        # traverses the validation hierarchy top down
-        mongo = self.validate(value)
+#         # primary key must be of type `ObjectId`
+#         if self.primary_key:
+#             return ObjectId(mongo) if not \
+#                 isinstance(mongo, ObjectId) else mongo
 
-        # primary key must be of type `ObjectId`
-        if self.primary_key:
-            return ObjectId(mongo) if not \
-                isinstance(mongo, ObjectId) else mongo
+#     def to_python(self, value):
+#         return value
 
-    def to_python(self, value):
-        return value
-
-    def validate(self, value):
-        return value
+#     def validate(self, value):
+#         return value
 
 
 class InformationDescriptor(object):
@@ -328,16 +330,8 @@ class Model(object):
         for field in self._info.fields:
             if field.primary_key:
                 return getattr(self, field.name)
+        # default to _id or give up
         return self._id if hasattr(self, '_id') else None
-
-    def to_mongo(self):
-        # start at the top of the hierarchy and work your way down
-        self.validate()
-
-        # build a mongo compatible dictionary
-        mongo = dict(field_to_mongo_tuple(self, field) \
-                            for field in self._info.fields)
-        return mongo
 
     @classmethod
     def to_python(cls, mongo):
@@ -367,7 +361,13 @@ class Model(object):
             'Document failed to validate', exceptions=exceptions)
 
     def save(self, **kwargs):
-        self._info.collection.save(self.to_mongo(), **kwargs)
+        # start at the top of the hierarchy and work your way down
+        document = self.validate()
+
+        # build a mongo compatible dictionary
+        mongo = dict(field_to_save_tuple(document, field) \
+                                for field in self._info.fields)
+        self._info.collection.save(mongo, **kwargs)
 
     def delete(self):
         oid = ObjectId(self.pk) if self.pk else None

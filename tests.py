@@ -23,14 +23,12 @@ class PynchTestSuite(unittest.TestCase):
         jones.save()
         me = Gardener(name='Jim', instructor=jones)
         me.save()
-        # m = Gardener._info.objects.find(name='Jim')
-        # x = [Gardener.to_python(y) for y in m]
-        # print x[0].__dict__['instructor'].__dict__.keys()
         garden = Garden(gardener=me, stomper=jones)
         garden.acres = 0.25
         garden.flowers = [Flower(name='rose'), Flower(name='daisy')]
         garden.save()
         x = Garden._info.objects.find_one(acres=0.25)
+        print x.flowers[0]
 
     def test_no_pk(self):
         pass
@@ -92,7 +90,7 @@ class StringFieldTestSuite(unittest.TestCase):
             field = StringField(db_field='new_field')
 
         a = A(field='abc')
-        mongo = a.to_mongo()
+        mongo = a.save()
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == 'abc')
 
@@ -158,7 +156,7 @@ class IntegerFieldTestSuite(unittest.TestCase):
             field = IntegerField(db_field='new_field')
 
         a = A(field=123)
-        mongo = a.to_mongo()
+        mongo = a.save()
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == 123)
 
@@ -224,7 +222,7 @@ class FloatFieldTestSuite(unittest.TestCase):
             field = FloatField(db_field='new_field')
 
         a = A(field=0.123)
-        mongo = a.to_mongo()
+        mongo = a.save()
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == 0.123)
 
@@ -288,7 +286,7 @@ class BooleanFieldTestSuite(unittest.TestCase):
             field = BooleanField(db_field='new_field')
 
         a = A(field=False)
-        mongo = a.to_mongo()
+        mongo = a.save()
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == False)
 
@@ -332,15 +330,15 @@ class BooleanFieldTestSuite(unittest.TestCase):
     #         bliss = ListField(ReferenceField(self.Gardener))
 
     #     garden.validate()
-    #     # print garden.to_mongo()
+    #     # print garden.to_save()
     #     garden.save()
     #     g = garden.find_one()
     #     print g.gardener.instructor
         # phoo = Phoo(hell=['a', 'b', 'c'], bliss=[me, jones])
-        # print phoo.to_mongo()
+        # print phoo.to_save()
         # phoo.save()
         # p = Phoo.find_one()
-        # print garden.to_mongo()
+        # print garden.to_save()
         # self.Garden.validate(garden)
         # p = Phoo()
         # p.bliss = []
@@ -348,7 +346,7 @@ class BooleanFieldTestSuite(unittest.TestCase):
         # p.hell = []
         # p.hell.append(1)
         # p.validate()
-        # print p._to_mongo()
+        # print p._to_save()
 
 if __name__ == '__main__':
     unittest.main()

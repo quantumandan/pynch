@@ -1,12 +1,12 @@
 from pynch.errors import ValidationException
 
 
-def field_to_mongo_tuple(document, field):
+def field_to_save_tuple(document, field):
     """
     returns tuples with value (field name, mongo value)
     """
     attr = getattr(document, field.name, None)
-    return (field.db_field or field.name, field.to_mongo(attr))
+    return (field.db_field or field.name, field.to_save(attr))
 
 
 def get_field_value_or_default(document, field):

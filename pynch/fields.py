@@ -14,7 +14,7 @@ class DynamicField(Field):
     Marker class for fields that can take data of any type.
     Does no actual validation.
     """
-    def to_mongo(self, data):
+    def to_save(self, data):
         return data
 
     def validate(self, data):
@@ -28,7 +28,7 @@ class SimpleField(Field):
 
     TODO: PY3 compatibility for simple types.
     """
-    def to_mongo(self, data):
+    def to_save(self, data):
         return data
 
     def validate(self, data):
@@ -64,11 +64,8 @@ class ComplexField(Field):
         return isinstance(self.field, DynamicField)
 
     def to_mongo_caller(self, x):
-        # return x.to_mongo() if \
-        #     issubclass(self.field, Model) else self.field.to_mongo(x)
-        # return x.to_mongo() if \
-        #     isinstance(self.field, Model) else self.field.to_mongo(x)
-        return self.field.to_mongo(x)
+        X = self.field.to_save(x)
+        return super(ComplexField, self).to_save(X)
 
     def to_python_caller(self, x):
         return x if isinstance(x, BASE_TYPES) else self.field.to_python(x)
@@ -101,10 +98,11 @@ class ListField(ComplexField):
             raise FieldTypeException(type(value), list)
         super(ListField, self).__set__(document, value)
 
-    def to_mongo(self, lst):
-        if lst is None: return []
-        mc = self.to_mongo_caller                # optimization
-        return [mc(x) for x in self.validate(lst)]
+    def to_save(self, lst):
+        if lst is None:
+            return []
+        X = [self.field.to_save(x) for x in lst]
+        return super(ListField, self).to_save(X)
 
     def to_python(self, lst):
         pc = self.to_python_caller               # optimization
@@ -126,8 +124,9 @@ class DictField(ComplexField):
             raise FieldTypeException(type(value), dict)
         super(DictField, self).__set__(document, value)
 
-    def to_mongo(self, dct):
-        if dct is None: return {}
+    def to_save(self, dct):
+        if dct is None:
+            return {}
         mc = self.to_mongo_caller                # optimization
         return dict((k, mc(v)) for k, v in self.validate(dct).items())
 
@@ -150,8 +149,9 @@ class GeneratorField(ComplexField):
             raise FieldTypeException(type(value), GeneratorType)
         super(GeneratorField, self).__set__(document, value)
 
-    def to_mongo(self, generator):
-        if generator is None: return []
+    def to_save(self, generator):
+        if generator is None:
+            return []
         mc = self.to_mongo_caller                # optimization
         return [mc(x) for x in self.validate(generator)]
 
@@ -175,10 +175,11 @@ class SetField(ComplexField):
             raise FieldTypeException(type(value), set)
         super(SetField, self).__set__(document, value)
 
-    def to_mongo(self, S):
-        if S is None: return []
-        mc = self.to_mongo_caller                # optimization
-        return [mc(x) for x in self.validate(S)]
+    def to_save(self, S):
+        if S is None:
+            return []
+        X = [self.field.to_save(x) for x in S]
+        return super(SetField, self).to_save(X)
 
     def to_python(self, lst):
         pc = self.to_python_caller               # optimization
@@ -254,14 +255,15 @@ class ReferenceField(Field):
         self.reference._info.backrefs[self.name].remove(self.model)
         super(ReferenceField, self).__delete__(document)
 
-    def to_mongo(self, document):
-        if self.validate(document) is not None:
+    def to_save(self, document):
+        mongo_doc = super(ReferenceField, self).to_save(document)
+        if mongo_doc is not None:
             name, host, port = self.reference._meta['database']
             # turns the document into a DBRef
-            return DBRef(self.reference.__name__, document.pk,
+            return DBRef(self.reference.__name__, mongo_doc.pk,
                          database=name, host=host, port=port)
         # in this case, document will be None
-        return document
+        return mongo_doc
 
     def to_python(self, dbref):
         # fails silently, not optimal
@@ -269,7 +271,8 @@ class ReferenceField(Field):
         return self.reference(**R)
 
     def validate(self, value):
-        if not isinstance(value, self.reference) and value is not None:
+        if not isinstance(value, (self.reference, DBRef)) \
+                and value is not None:
             raise FieldTypeException(type(value), self.reference)
         return value
 
@@ -284,9 +287,9 @@ class StringField(SimpleField):
         self.max_length = max_length
         super(StringField, self).__init__(**params)
 
-    def to_mongo(self, value):
+    def to_save(self, value):
         value = unicode(value) if value is not None else value
-        return super(StringField, self).to_mongo(value)
+        return super(StringField, self).to_save(value)
 
     def to_python(self, value):
         return unicode(value)
@@ -311,9 +314,9 @@ class IntegerField(SimpleField):
         self.max_value = max_value
         super(IntegerField, self).__init__(**params)
 
-    def to_mongo(self, value):
+    def to_save(self, value):
         value = int(value) if value is not None else value
-        return super(IntegerField, self).to_mongo(value)
+        return super(IntegerField, self).to_save(value)
 
     def to_python(self, value):
         return int(value)
@@ -340,9 +343,9 @@ class FloatField(SimpleField):
         self.max_value = max_value
         super(FloatField, self).__init__(**params)
 
-    def to_mongo(self, value):
+    def to_save(self, value):
         value = float(value) if value is not None else value
-        return super(FloatField, self).to_mongo(value)
+        return super(FloatField, self).to_save(value)
 
     def to_python(self, value):
         return float(value)
@@ -364,9 +367,9 @@ class FloatField(SimpleField):
 
 
 class BooleanField(SimpleField):
-    def to_mongo(self, value):
+    def to_save(self, value):
         value = bool(value) if value is not None else value
-        return super(BooleanField, self).to_mongo(value)
+        return super(BooleanField, self).to_save(value)
 
     def to_python(self, value):
         return bool(value)
@@ -398,7 +401,7 @@ class URLField(StringField):
 
 
 class DecimalField(SimpleField):
-    def to_mongo(self, value):
+    def to_save(self, value):
         pass
 
     def to_python(self, value):
