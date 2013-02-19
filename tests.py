@@ -26,7 +26,6 @@ class PynchTestSuite(unittest.TestCase):
         m = Gardener.find(name='Jim')
         x = [Gardener.to_python(y) for y in m]
         # print x[0].__dict__['instructor'].__dict__.keys()
-        import pdb; pdb.set_trace();
         garden = Garden(gardener=me, stomper=jones)
         garden.acres = 0.25
         garden.flowers = [Flower(name='rose'), Flower(name='daisy')]
