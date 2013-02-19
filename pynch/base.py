@@ -339,7 +339,7 @@ class Model(object):
         return self._pynch.collection.save(mongo, **kwargs)
 
     def delete(self):
-        oid = ObjectId(self.pk) if self.pk else None
+        oid = self.pk if self.pk else None
         if oid is None:
             raise Exception('Cant delete documents which '
                             'have no _id or primary key')

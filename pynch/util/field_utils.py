@@ -84,9 +84,7 @@ def check_fields(document):
     Validate the fields, if a failure occurs then yield
     a tuple containing the field name and exception
     """
-    # validate the fields' relationships to each other, then
-    # delegate validation of the actual instance data to the
-    # document's field instances
+    # validate the fields' relationships to each other
     for field in document._pynch.fields:
         try:
             field_check_required(document, field)
@@ -102,9 +100,5 @@ def check_fields(document):
             yield (field.name, e)
         try:
             field_check_unique(document, field)
-        except ValidationException as e:
-            yield (field.name, e)
-        try:
-            field.validate(getattr(document, field.name, None))
         except ValidationException as e:
             yield (field.name, e)
