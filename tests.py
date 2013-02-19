@@ -20,7 +20,7 @@ class PynchTestSuite(unittest.TestCase):
         garden.acres = 0.25
         garden.flowers = [Flower(name='rose'), Flower(name='daisy')]
         garden.save()
-        x = Garden._info.objects.find_one(acres=0.25)
+        x = Garden._pynch.objects.find_one(acres=0.25)
         # print x.flowers[0].name
 
     def test_no_pk(self):
@@ -84,7 +84,7 @@ class StringFieldTestSuite(unittest.TestCase):
 
         a = A(field='abc')
         mongo_id = a.save()
-        mongo = A._info.collection.find_one({'_id': mongo_id})
+        mongo = A._pynch.collection.find_one({'_id': mongo_id})
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == 'abc')
 
@@ -151,7 +151,7 @@ class IntegerFieldTestSuite(unittest.TestCase):
 
         a = A(field=123)
         mongo_id = a.save()
-        mongo = A._info.collection.find_one({'_id': mongo_id})
+        mongo = A._pynch.collection.find_one({'_id': mongo_id})
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == 123)
 
@@ -218,7 +218,7 @@ class FloatFieldTestSuite(unittest.TestCase):
 
         a = A(field=0.123)
         mongo_id = a.save()
-        mongo = A._info.collection.find_one({'_id': mongo_id})
+        mongo = A._pynch.collection.find_one({'_id': mongo_id})
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == 0.123)
 
@@ -283,7 +283,7 @@ class BooleanFieldTestSuite(unittest.TestCase):
 
         a = A(field=False)
         mongo_id = a.save()
-        mongo = A._info.collection.find_one({'_id': mongo_id})
+        mongo = A._pynch.collection.find_one({'_id': mongo_id})
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == False)
 

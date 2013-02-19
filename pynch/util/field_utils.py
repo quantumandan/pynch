@@ -87,7 +87,7 @@ def check_fields(document):
     # validate the fields' relationships to each other, then
     # delegate validation of the actual instance data to the
     # document's field instances
-    for field in document._info.fields:
+    for field in document._pynch.fields:
         try:
             field_check_required(document, field)
         except ValidationException as e:

@@ -216,7 +216,7 @@ class ReferenceField(Field):
     'MrJones'
     >>> print Garden.gardener.reference
     <class 'Gardener' ...>
-    >>> print Gardener._info.backrefs
+    >>> print Gardener._pynch.backrefs
     set([<class 'Garden' ...>, <class 'Gardener' ...>])
     """
     def __init__(self, reference, **params):
@@ -240,7 +240,7 @@ class ReferenceField(Field):
             if not issubclass(self.reference, Model):
                 raise FieldTypeException(self.reference, Model)
             # only add backrefs when the reference has been rebound
-            self.reference._info.backrefs.setdefault(
+            self.reference._pynch.backrefs.setdefault(
                             self.name, set()).add(self.model)
 
     def __get__(self, document, model=None):
@@ -252,7 +252,7 @@ class ReferenceField(Field):
         return super(ReferenceField, self).__get__(document, model)
 
     def __delete__(self, document):
-        self.reference._info.backrefs[self.name].remove(self.model)
+        self.reference._pynch.backrefs[self.name].remove(self.model)
         super(ReferenceField, self).__delete__(document)
 
     def to_save(self, document):
@@ -278,7 +278,7 @@ class ReferenceField(Field):
 
     def dereference(self, dbref):
         key = (dbref.host, dbref.port)
-        db = self.model._info._connection_pool[key][dbref.database]
+        db = self.model._pynch._connection_pool[key][dbref.database]
         return db.dereference(dbref)
 
 

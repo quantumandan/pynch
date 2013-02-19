@@ -18,13 +18,13 @@ class Field(object):
         can import and bind the correct classes
         """
         field = super(Field, cls).__new__(cls)
-        outermost_frame = inspect.stack()[-1][0]
-        field._context = outermost_frame.f_locals.get('__name__', '')
+        frame = inspect.stack()[-1][0]  # outermost frame
+        field._context = frame.f_locals.get('__name__', '')
         return field
 
     def __init__(self, db_field=None, required=False, default=None,
                  unique=False, unique_with=None, primary_key=False,
-                 choices=None, help_text=None):
+                 choices=None, help_text=None, *args, **kwargs):
         """
         Base class for all field types. Fields are descriptors that
         manage the validation and typing of a document's attributes.
@@ -83,16 +83,15 @@ class Field(object):
     def to_save(self, value):
         # traverses the validation hierarchy top down
         # X = self.validate(value)
-        X = value
-        if isinstance(X, Model):
-            X.save()
+        if isinstance(value, Model):
+            value.save()
 
         # primary key must be of type `ObjectId`
         if self.primary_key:
-            return ObjectId(X) if not isinstance(X, ObjectId) else X
+            return ObjectId(value) if not isinstance(value, ObjectId) else value
 
         # already validated and not a primary key
-        return X
+        return value
 
     def to_python(self, value):
         raise DelegationException('Define in a subclass')
@@ -105,7 +104,7 @@ class Field(object):
 #     def set(self, name, model):
 #         super(ObjectIdField, self).set(name, model)
 
-#         for field in model._info.fields:
+#         for field in model._pynch.fields:
 #             if field.primary_key:
 #                 assert (name == field.name) or \
 #                        (field.db_field == '_id')
@@ -130,13 +129,6 @@ class InformationDescriptor(object):
     """
     Among other things, is responsible for generating and managing
     pynch connections to the database.
-
-    Most of your time will be spent accessing things like `objects`
-
-    >>> classic = Book(title='Moby Dick', author='Charles Dickens')
-    >>> horror  = Book(title='The Stand', author='Steven King')
-    >>> print Book._info.objects.all()  # lazy retrieval
-    <generator object ...>
     """
 
     _connection_pool = weakref.WeakValueDictionary()
@@ -160,15 +152,14 @@ class InformationDescriptor(object):
                         db_name else MockDatabase(self.connection)
 
         # and make the collection we're going to use
-        model_name = self.model.__name__
-        self.collection = getattr(self.db, model_name)
+        self.collection = getattr(self.db, self.model.__name__)
 
     def __get__(self, document, model=None):
         return self
 
     def __set__(self, document, value):
-        # bad things happen if _info goes away
-        raise NotImplementedError('Cannot overwrite _info')
+        # bad things happen if _pynch goes away
+        raise NotImplementedError('Cannot overwrite _pynch')
 
     def connect(self, host, port):
         """
@@ -247,7 +238,7 @@ class ModelMetaclass(type):
 
         # information descriptor allows class level access to
         # orm functionality
-        model._info = InformationDescriptor(model)
+        model._pynch = InformationDescriptor(model)
         # DON'T FORGET TO CALL type's init
         super(ModelMetaclass, model).__init__(name, bases, attrs)
 
@@ -325,8 +316,9 @@ class Model(object):
             # deserialize DBRefs if possible
             if isinstance(v, DBRef):
                 cls = self.__class__
-                v = getattr(cls, k)._info.to_python(v) if hasattr(cls, k) else \
-                        raise_(DocumentValidationException('Cannot resolve dbref'))
+                field = getattr(cls, k) if hasattr(cls, k) else \
+                    raise_(DocumentValidationException('Cannot resolve dbref'))
+                v = field.to_python(v)
 
             # setattr must be called to activate the descriptors,
             # rather than update the document's __dict__ directly
@@ -341,7 +333,7 @@ class Model(object):
         """
         finds the model's primary key, if any
         """
-        for field in self._info.fields:
+        for field in self._pynch.fields:
             if field.primary_key:
                 return getattr(self, field.name)
         # default to _id or give up
@@ -367,12 +359,12 @@ class Model(object):
 
         # build a mongo compatible dictionary
         mongo = dict(field_to_save_tuple(document, field) \
-                                for field in self._info.fields)
-        return self._info.collection.save(mongo, **kwargs)
+                                for field in self._pynch.fields)
+        return self._pynch.collection.save(mongo, **kwargs)
 
     def delete(self):
         oid = ObjectId(self.pk) if self.pk else None
         if oid is None:
             raise Exception('Cant delete documents which '
                             'have no _id or primary key')
-        self._info.collection.remove(oid)
+        self._pynch.collection.remove(oid)
