@@ -31,8 +31,8 @@ class Flower(Base):
 class Gardener(Person):
     _meta = {'database': settings['Gardener_db']}
     instructor = ReferenceField('self')
-    picked = ListField(ReferenceField(Flower))
-    planted = ListField(ReferenceField(Flower), unique_with='picked')
+    picked = SetField(ReferenceField(Flower))
+    planted = SetField(ReferenceField(Flower), unique_with='picked')
 
 
 class BugStomper(Gardener):

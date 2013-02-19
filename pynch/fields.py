@@ -235,7 +235,7 @@ class ReferenceField(Field):
         if not isinstance(self.reference, basestring):
             # only allow references to documents
             if not issubclass(self.reference, Model):
-                raise FieldTypeException(type(self.reference), Model)
+                raise FieldTypeException(self.reference, Model)
             # only add backrefs when the reference has been rebound
             self.reference._info.backrefs.setdefault(
                             self.name, set()).add(self.model)
@@ -255,17 +255,20 @@ class ReferenceField(Field):
     def to_mongo(self, document):
         if self.validate(document) is not None:
             name, host, port = self.reference._meta['database']
+            # turns the document into a DBRef
+            # TODO: make references cross database compatible
             return DBRef(self.reference.__name__, document.pk,
                          database=name, host=host, port=port)
+        # in this case, document will be None
         return document
 
     def to_python(self, dbref):
+        # fails silently, not optimal
         R = self.dereference(dbref) or {}
         return self.reference(**R)
 
     def validate(self, value):
-        if not isinstance(value, self.reference) \
-                and value is not None:
+        if not isinstance(value, self.reference) and value is not None:
             raise FieldTypeException(type(value), self.reference)
         return value
 
@@ -286,8 +289,7 @@ class StringField(SimpleField):
         return unicode(value)
 
     def validate(self, value):
-        if not isinstance(value, basestring) \
-                and value is not None:
+        if not isinstance(value, basestring) and value is not None:
             raise FieldTypeException(type(value), basestring)
 
         exceeds_length = len(value) > self.max_length \
@@ -314,8 +316,7 @@ class IntegerField(SimpleField):
         return int(value)
 
     def validate(self, value):
-        if not isinstance(value, int) \
-                and value is not None:
+        if not isinstance(value, int) and value is not None:
             raise FieldTypeException(type(value), int)
 
         if value is not None:

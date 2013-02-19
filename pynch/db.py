@@ -13,15 +13,6 @@ class DB(_DB_tuple):
         return super(DB, cls).__new__(cls, *args)
 
 
-# def DB(*args, **kwargs):
-#     if not args:
-#         name = kwargs.pop('name', '')
-#         host = kwargs.pop('host', 'localhost')
-#         port = kwargs.pop('port', 27017)
-#         return _DB_tuple(name, host, port)
-#     return _DB_tuple(*args)
-
-
 class MockConnection(object):
     def __init__(self, host, port):
         pass

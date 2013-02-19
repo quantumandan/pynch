@@ -336,13 +336,13 @@ class Model(object):
     @classmethod
     def to_python(cls, mongo):
         python_fields = {}
-
         for field in cls._info.fields:
+            # rememeber mongo info is stored with key `field.db_field`
+            # if it is different from `field.name`
             mongo_value = mongo[field.db_field or field.name]
             # (secretly) traverse the document hierarchy
             python_fields[field.name] = field.to_python(mongo_value) if \
                                              mongo_value is not None else None
-
         # cast the resulting dict to this particular model type
         return cls(**python_fields)
 
