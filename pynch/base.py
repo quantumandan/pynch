@@ -297,7 +297,13 @@ class Model(object):
 
         # allows up and down casting
         if castable:
-            values.update(castable[0].__dict__)
+            castable = castable[0]
+            # `castable` must either belong to a subclass of the
+            # current model, or the current moddel must be a sublcass
+            # of castable's model
+            assert (isinstance(castable, self.__class__) or \
+                    isinstance(self, castable.__class__))
+            values.update(castable.__dict__)
 
         for k, v in values.items():
             # deserialize DBRefs if possible
@@ -340,7 +346,7 @@ class Model(object):
             # rememeber mongo info is stored with key `field.db_field`
             # if it is different from `field.name`
             mongo_value = mongo[field.db_field or field.name]
-            # (secretly) traverse the document hierarchy
+            # (secretly) traverse the document hierarchy top down
             python_fields[field.name] = field.to_python(mongo_value) if \
                                              mongo_value is not None else None
         # cast the resulting dict to this particular model type

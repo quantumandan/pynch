@@ -31,7 +31,6 @@ class PynchTestSuite(unittest.TestCase):
         garden.flowers = [Flower(name='rose'), Flower(name='daisy')]
         garden.save()
         x = Garden._info.objects.find_one(acres=0.25)
-        import pdb; pdb.set_trace();
 
     def test_no_pk(self):
         pass

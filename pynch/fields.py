@@ -66,8 +66,9 @@ class ComplexField(Field):
     def to_mongo_caller(self, x):
         # return x.to_mongo() if \
         #     issubclass(self.field, Model) else self.field.to_mongo(x)
-        return x.to_mongo() if \
-            isinstance(self.field, Model) else self.field.to_mongo(x)
+        # return x.to_mongo() if \
+        #     isinstance(self.field, Model) else self.field.to_mongo(x)
+        return self.field.to_mongo(x)
 
     def to_python_caller(self, x):
         return x if isinstance(x, BASE_TYPES) else self.field.to_python(x)
@@ -87,7 +88,8 @@ class ListField(ComplexField):
             return self.species
 
     class Garden(Model):
-        flowers = ListField(Flower)
+        awards = ListField(StringField())
+        flowers = ListField(ReferenceField(Flower))
 
     >>> garden = Garden()
     >>> garden.flowers = [Flower(species='Rose'), Flower(species='Daisy')]
