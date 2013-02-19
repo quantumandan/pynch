@@ -1,5 +1,5 @@
 from pynch.errors import FieldTypeException, DelegationException, ValidationException
-from pynch.util.misc import type_of, import_class
+from pynch.util.misc import import_class
 from pynch.base import Field, Model
 from bson.dbref import DBRef
 from types import GeneratorType
@@ -96,8 +96,7 @@ class ListField(ComplexField):
     """
     def __set__(self, document, value):
         if not isinstance(value, list):
-            raise FieldTypeException(
-                    actually_is=type_of(value), should_be=list)
+            raise FieldTypeException(type(value), list)
 
         super(ListField, self).__set__(document, value)
 
@@ -123,8 +122,7 @@ class DictField(ComplexField):
     """
     def __set__(self, document, value):
         if not isinstance(value, dict):
-            raise FieldTypeException(
-                    actually_is=type_of(value), should_be=dict)
+            raise FieldTypeException(type(value), dict)
 
         super(DictField, self).__set__(document, value)
 
@@ -149,7 +147,7 @@ class GeneratorField(ComplexField):
     """
     def __set__(self, document, value):
         if not isinstance(value, GeneratorType):
-            raise FieldTypeException(type_of(value), GeneratorType)
+            raise FieldTypeException(type(value), GeneratorType)
 
         super(GeneratorField, self).__set__(document, value)
 
@@ -171,7 +169,7 @@ class GeneratorField(ComplexField):
 class SetField(ComplexField):
     def __set__(self, document, value):
         if not isinstance(value, set):
-            raise FieldTypeException(type_of(value), set)
+            raise FieldTypeException(type(value), set)
 
         super(SetField, self).__set__(document, value)
 
@@ -237,8 +235,7 @@ class ReferenceField(Field):
         if not isinstance(self.reference, basestring):
             # only allow references to documents
             if not issubclass(self.reference, Model):
-                raise FieldTypeException(type_of(self.reference), Model)
-
+                raise FieldTypeException(type(self.reference), Model)
             # only add backrefs when the reference has been rebound
             self.reference._info.backrefs.setdefault(
                             self.name, set()).add(self.model)
@@ -264,17 +261,12 @@ class ReferenceField(Field):
 
     def to_python(self, dbref):
         R = self.dereference(dbref) or {}
-        # document = {}
-        # for k, v in R.items():
-        #     if isinstance(v, DBRef):
-        #         v = getattr(self.reference, k).to_python(v)
-        #     document[k] = v
         return self.reference(**R)
 
     def validate(self, value):
         if not isinstance(value, self.reference) \
                 and value is not None:
-            raise FieldTypeException(type_of(value), self.reference)
+            raise FieldTypeException(type(value), self.reference)
         return value
 
     def dereference(self, dbref):
@@ -296,7 +288,7 @@ class StringField(SimpleField):
     def validate(self, value):
         if not isinstance(value, basestring) \
                 and value is not None:
-            raise FieldTypeException(type_of(value), basestring)
+            raise FieldTypeException(type(value), basestring)
 
         exceeds_length = len(value) > self.max_length \
                                 if self.max_length else False
@@ -324,7 +316,7 @@ class IntegerField(SimpleField):
     def validate(self, value):
         if not isinstance(value, int) \
                 and value is not None:
-            raise FieldTypeException(type_of(value), int)
+            raise FieldTypeException(type(value), int)
 
         if value is not None:
             if self.min_value and value < self.min_value:
@@ -353,7 +345,7 @@ class FloatField(SimpleField):
 
     def validate(self, value):
         if not isinstance(value, float) and value is not None:
-            raise FieldTypeException(type_of(value), float)
+            raise FieldTypeException(type(value), float)
 
         if value is not None:
             if self.min_value and value < self.min_value:
@@ -377,7 +369,7 @@ class BooleanField(SimpleField):
 
     def validate(self, value):
         if not isinstance(value, bool) and value is not None:
-            raise FieldTypeException(type_of(value), bool)
+            raise FieldTypeException(type(value), bool)
         return value
 
 

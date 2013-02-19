@@ -29,15 +29,19 @@ class Field(object):
         Base class for all field types. Fields are descriptors that
         manage the validation and typing of a document's attributes.
         """
+        # primary keys are required
         self.db_field = db_field if not primary_key else '_id'
         self.required = required if not primary_key else True
+        self.primary_key = primary_key
+        # default's get called when no corresponding attr exists
+        # in the document's __dict__
         self.default = default
-        # self.unique = bool(unique or unique_with)
+        # caution, marking a lot of fields as unique will cause
+        # you to take a performance hit when validating
         self.unique = unique
         # since unique_with can be either a string or a list
         # of strings, we must check and convert as needed
         self.unique_with = unique_with if unique_with else []
-        self.primary_key = primary_key
         self.choices = choices
         self.help_text = help_text
 
@@ -222,9 +226,6 @@ class ModelMetaclass(type):
         for fieldname, field in attrs.items():
             if isinstance(field, Field):
                 assert fieldname != 'pk'
-                assert fieldname != 'to_mongo'
-                assert fieldname != 'to_python'
-                assert fieldname != 'validate'
                 field.set(fieldname, model)
 
         # information descriptor allows class level access to
@@ -267,6 +268,7 @@ class Model(object):
     host     := string            (default = 'localhost')
     port     := integer           (default = 27017)
 
+    TODO:
     An interesting application, you can build a distributed,
     NoSQL database like so:
 
@@ -294,7 +296,7 @@ class Model(object):
         super(Model, self).__init__()
 
         # allows up and down casting
-        if castable and isinstance(castable, self.__class__):
+        if castable:
             values.update(castable[0].__dict__)
 
         for k, v in values.items():

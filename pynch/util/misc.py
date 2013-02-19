@@ -17,7 +17,7 @@ UnboundReference = type('UnboundReference', (), {})
 
 def import_class(to_import, context=''):
     # if `.` not in the import path then we are referencing
-    # a class relative to the module to which it belongs
+    # a class relative to the module in which it belongs.
     # such things occur when running a module as a script,
     # in which case context would be `__main__`
     if '.' not in to_import:
@@ -30,7 +30,7 @@ def import_class(to_import, context=''):
     m = __import__(module, [clsname])
     # returns None when the class doesn't exist in the module's
     # namespace, either because the class hasn't been loaded
-    # yet, or the class doesn't exist
+    # yet, or the class doesn't exist at all
     return getattr(m, clsname, None)
 
 
