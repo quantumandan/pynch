@@ -1,5 +1,5 @@
 from pynch.errors import FieldTypeException, DelegationException, ValidationException
-from pynch.util.misc import type_of, import_class, UnboundReference
+from pynch.util.misc import type_of, import_class
 from pynch.base import Field, Model
 from bson.dbref import DBRef
 from types import GeneratorType
@@ -226,7 +226,7 @@ class ReferenceField(Field):
         super(ReferenceField, self).set(name, model)
         # rebind reference with an actual class if reference is
         # an import path (str) or is 'self', otherwise reference
-        # hasn't been read into memory yet, so defer rebinding
+        # hasn't been read into memory yet, so defer binding
         if isinstance(self.reference, basestring):
             model_name = self.reference
             self.reference = \
@@ -264,12 +264,12 @@ class ReferenceField(Field):
 
     def to_python(self, dbref):
         R = self.dereference(dbref) or {}
-        document = {}
-        for k, v in R.items():
-            if isinstance(v, DBRef):
-                v = getattr(self.reference, k).to_python(v)
-            document[k] = v
-        return self.reference(**document)
+        # document = {}
+        # for k, v in R.items():
+        #     if isinstance(v, DBRef):
+        #         v = getattr(self.reference, k).to_python(v)
+        #     document[k] = v
+        return self.reference(**R)
 
     def validate(self, value):
         if not isinstance(value, self.reference) \

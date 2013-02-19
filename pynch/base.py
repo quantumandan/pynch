@@ -1,11 +1,12 @@
 from pynch.query import QueryManager
 from pynch.db import MockDatabase, MockConnection, DB
 import pymongo
+from bson.dbref import DBRef
 from bson.objectid import ObjectId
 import weakref
 import inspect
 from pynch.errors import *
-from pynch.util.misc import MultiDict, dir_
+from pynch.util.misc import MultiDict, dir_, raise_
 from pynch.util.field_utils import (check_fields, field_to_mongo_tuple,
                                     get_field_value_or_default)
 
@@ -220,6 +221,10 @@ class ModelMetaclass(type):
         # what classes they are attached to.
         for fieldname, field in attrs.items():
             if isinstance(field, Field):
+                assert fieldname != 'pk'
+                assert fieldname != 'to_mongo'
+                assert fieldname != 'to_python'
+                assert fieldname != 'validate'
                 field.set(fieldname, model)
 
         # information descriptor allows class level access to
@@ -285,11 +290,22 @@ class Model(object):
     """
     __metaclass__ = ModelMetaclass
 
-    def __init__(self, **values):
+    def __init__(self, *castable, **values):
         super(Model, self).__init__()
-        # setattr must be called to activate the descriptors,
-        # rather than update the document's __dict__ directly
+
+        # allows up and down casting
+        if castable and isinstance(castable, self.__class__):
+            values.update(castable[0].__dict__)
+
         for k, v in values.items():
+            # deserialize DBRefs if possible
+            if isinstance(v, DBRef):
+                cls = self.__class__
+                v = getattr(cls, k).to_python(v) if hasattr(cls, k) else \
+                        raise_(DocumentValidationException('Cannot resolve dbref'))
+
+            # setattr must be called to activate the descriptors,
+            # rather than update the document's __dict__ directly
             setattr(self, k, v)
 
         # everything must have some form of id
