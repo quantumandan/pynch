@@ -273,15 +273,15 @@ class Model(object):
     NoSQL database like so:
 
     class Doc_C(Doc_B):
-        _meta = {'database': DB('test-2', 'localhost', 27017)}
+        _meta = {'database': DB('test-2')}
         field = ReferenceField(Doc_B)
 
     class Doc_D(Doc_B):
-        _meta = {'database': DB('test-3', 'localhost', 27017)}
+        _meta = {'database': DB('test-3')}
         field = ReferenceField(Doc_C)
 
     class Doc_E(Doc_B):
-        _meta = {'database': DB('test-4', '173.1.2.5', 27017)}
+        _meta = {'database': DB('test-4', '173.1.2.5')}
         field = ReferenceField(Doc_D)
 
     Essentially, Docs A-D are stored locally, but in different
@@ -304,7 +304,7 @@ class Model(object):
             if isinstance(v, DBRef):
                 cls = self.__class__
                 v = getattr(cls, k).to_python(v) if hasattr(cls, k) else \
-                        raise_(DocumentValidationException('Cannot resolve dbref'))
+                        raise_(ValidationException('Cannot resolve dbref'))
 
             # setattr must be called to activate the descriptors,
             # rather than update the document's __dict__ directly
@@ -341,8 +341,8 @@ class Model(object):
             # if it is different from `field.name`
             mongo_value = mongo[field.db_field or field.name]
             # (secretly) traverse the document hierarchy
-            python_fields[field.name] = field.to_python(mongo_value) if \
-                                             mongo_value is not None else None
+            python_fields[field.name] = \
+                field.to_python(mongo_value) if mongo_value is not None else None
         # cast the resulting dict to this particular model type
         return cls(**python_fields)
 
@@ -360,12 +360,6 @@ class Model(object):
         raise DocumentValidationException(
             'Document failed to validate', exceptions=exceptions)
 
-    def update(self, spec, **kwargs):
-        self._info.collection.update(spec, self.to_mongo(), **kwargs)
-
-    def insert(self, *args, **kwargs):
-        self._info.collection.insert(self.to_mongo(), **kwargs)
-
     def save(self, **kwargs):
         self._info.collection.save(self.to_mongo(), **kwargs)
 
@@ -375,11 +369,3 @@ class Model(object):
             raise Exception('Cant delete documents which '
                             'have no _id or primary key')
         self._info.collection.remove(oid)
-
-    @classmethod
-    def find_one(cls):
-        return cls.to_python(cls._info.collection.find_one())
-
-    @classmethod
-    def find(cls, **spec):
-        return cls._info.collection.find(**spec)
