@@ -172,7 +172,8 @@ class InformationDescriptor(object):
 
     @property
     def fields(self):
-        return [v for v in dir_(self.model).values() if isinstance(v, Field)]
+        return [v for k, v in dir_(self.model).items() \
+                    if isinstance(v, Field) or k is '_id']
 
 
 class ModelMetaclass(type):
@@ -278,6 +279,27 @@ class Model(object):
     def __init__(self, *castable, **values):
         super(Model, self).__init__()
 
+        failure_msg = 'Cannot resolve field %s into document'
+        exceptions = {}
+
+        for k, v in values.items():
+            cls = self.__class__
+            field = getattr(cls, k) if hasattr(cls, k) else \
+                        raise_(DocumentValidationException(failure_msg % k))
+
+            try:
+                v = field.to_python(v)
+            except Exception as e:
+                exceptions.setdefault(k, []).append(e)
+
+            # setattr must be called to activate the descriptors,
+            # rather than update the document's __dict__ directly
+            setattr(self, k, v)
+
+        if exceptions:
+            raise DocumentValidationException(
+                'Could not reconstruct document', exceptions=exceptions)
+
         # allows up and down casting
         if castable:
             castable = castable[0]
@@ -286,21 +308,9 @@ class Model(object):
             # of castable's model
             assert (isinstance(castable, type(self)) or \
                     isinstance(self, type(castable)))
-            values.update(castable.__dict__)
+            self.__dict__.update(castable.__dict__)
 
-        for k, v in values.items():
-            # deserialize DBRefs if possible
-            if isinstance(v, DBRef):
-                cls = self.__class__
-                field = getattr(cls, k) if hasattr(cls, k) else \
-                    raise_(DocumentValidationException('Cannot resolve dbref'))
-                v = field.to_python(v)
-
-            # setattr must be called to activate the descriptors,
-            # rather than update the document's __dict__ directly
-            setattr(self, k, v)
-
-        # everything must have some form of id
+        # everything must have some form of pk
         if not self.pk:
             self._id = ObjectId()
 
@@ -336,6 +346,7 @@ class Model(object):
         # build a mongo compatible dictionary
         mongo = dict(field_to_save_tuple(document, field) \
                                 for field in self._pynch.fields)
+        mongo.setdefault('_id', self._id)
         return self._pynch.collection.save(mongo, **kwargs)
 
     def delete(self):

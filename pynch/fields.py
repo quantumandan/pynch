@@ -178,7 +178,7 @@ class SetField(ComplexField):
     def validate(self, iterable):
         if iterable is not None:
             validate = self.field.validate       # optimization
-            return set(validate(s) for s in iterable)
+            return [validate(s) for s in iterable]
 
 
 class ReferenceField(Field):
@@ -249,6 +249,8 @@ class ReferenceField(Field):
         # notice that `ReferenceField.to_save` does not call
         # Field's `to_save`
         if document is not None:
+            pk = document.save()
+            assert pk == document.pk
             name, host, port = self.reference._meta['database']
             # turns the document into a DBRef
             return DBRef(self.reference.__name__, document.pk,
@@ -257,7 +259,8 @@ class ReferenceField(Field):
         return document
 
     def to_python(self, dbref):
-        # fails silently, not optimal
+        if isinstance(dbref, Model):
+            return dbref
         R = self.dereference(dbref) or {}
         return self.reference(**R)
 
