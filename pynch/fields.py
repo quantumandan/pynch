@@ -271,9 +271,10 @@ class ReferenceField(Field):
         return value
 
     def dereference(self, dbref):
-        key = (dbref.host, dbref.port)
-        db = self.model._pynch._connection_pool[key][dbref.database]
-        return db.dereference(dbref)
+        if dbref is not None:
+            key = (dbref.host, dbref.port)
+            db = self.model._pynch._connection_pool[key][dbref.database]
+            return db.dereference(dbref)
 
 
 class StringField(SimpleField):

@@ -31,6 +31,12 @@ class DocumentValidationException(ValidationException):
         # opposed to a MultiDict) will suffice should exceptions be None
         self.exceptions = exceptions if exceptions else {}
         for name, field_exceptions in self.exceptions.items():
+            # wrap field_exceptions in a list in case we want to pass an
+            # ordinary dictionary, as opposed to a MultiDict, into the exception
+            field_exceptions = field_exceptions if \
+                isinstance(field_exceptions, list) else [field_exceptions]
+            # collect err msgs
             for exc in field_exceptions:
                 msg += '\nField "%s" failed to validate: %s' % (name, exc)
+
         super(DocumentValidationException, self).__init__(msg)

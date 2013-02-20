@@ -5,8 +5,8 @@ def field_to_save_tuple(document, field):
     """
     returns tuples with value (field name, mongo value)
     """
-    if field is '_id':
-        return (field, document._id)
+    # if field is '_id':
+    #     return (field, document._id)
     attr = getattr(document, field.name, None)
     return (field.db_field or field.name, field.to_save(attr))
 

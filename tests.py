@@ -13,15 +13,15 @@ class TestModel(Model):
 class PynchTestSuite(unittest.TestCase):
     def test_this(self):
         jones = BugStomper(name='Mr. Jones')
-        jones.save()
+        # jones.save()
         me = Gardener(name='Jim', instructor=jones)
-        me.save()
+        # me.save()
         garden = Garden(gardener=me, stomper=jones)
         garden.acres = 0.25
         garden.flowers = [Flower(name='rose'), Flower(name='daisy')]
         garden.save()
         x = Garden._pynch.objects.find_one(acres=0.25)
-        print x.flowers[0].name
+        print x.stomper.name
 
     def test_no_pk(self):
         pass

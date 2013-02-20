@@ -1,7 +1,6 @@
 from pynch.query import QueryManager
 from pynch.db import MockDatabase, MockConnection, DB
 import pymongo
-from bson.dbref import DBRef
 from bson.objectid import ObjectId
 import weakref
 import inspect
@@ -101,6 +100,14 @@ class Field(object):
         raise DelegationException('Define in a subclass')
 
 
+class FieldProxy(property):
+    def to_python(self, value):
+        return value
+
+    def validate(self, value):
+        return value
+
+
 class InformationDescriptor(object):
     """
     Among other things, is responsible for generating and managing
@@ -172,8 +179,7 @@ class InformationDescriptor(object):
 
     @property
     def fields(self):
-        return [v for k, v in dir_(self.model).items() \
-                    if isinstance(v, Field) or k is '_id']
+        return [v for k, v in dir_(self.model).items() if isinstance(v, Field)]
 
 
 class ModelMetaclass(type):
@@ -212,6 +218,15 @@ class ModelMetaclass(type):
                 assert fieldname not in ('pk', 'validate',
                                         'save', 'delete')
                 field.set(fieldname, model)
+
+        if not hasattr(model, '_id'):
+            def get_X(doc):
+                return doc.__dict__.setdefault('_id', ObjectId())
+
+            def set_X(doc, value):
+                doc.__dict__['_id'] = value
+
+            model._id = FieldProxy(get_X, set_X)
 
         # information descriptor allows class level access to
         # orm functionality
@@ -279,7 +294,7 @@ class Model(object):
     def __init__(self, *castable, **values):
         super(Model, self).__init__()
 
-        failure_msg = 'Cannot resolve field %s into document'
+        failure_msg = 'Cannot resolve field %s onto document'
         exceptions = {}
 
         for k, v in values.items():
@@ -290,7 +305,7 @@ class Model(object):
             try:
                 v = field.to_python(v)
             except Exception as e:
-                exceptions.setdefault(k, []).append(e)
+                exceptions[k] = e
 
             # setattr must be called to activate the descriptors,
             # rather than update the document's __dict__ directly
@@ -309,10 +324,6 @@ class Model(object):
             assert (isinstance(castable, type(self)) or \
                     isinstance(self, type(castable)))
             self.__dict__.update(castable.__dict__)
-
-        # everything must have some form of pk
-        if not self.pk:
-            self._id = ObjectId()
 
     @property
     def pk(self):
