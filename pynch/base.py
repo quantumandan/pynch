@@ -161,18 +161,6 @@ class InformationDescriptor(object):
         # otherwise just get what's already there
         return self._connection_pool[key]
 
-    # def to_python(self, mongo):
-    #     python_fields = {}
-    #     for field in self.fields:
-    #         # rememeber mongo info is stored with key `field.db_field`
-    #         # if it is different from `field.name`
-    #         mongo_value = mongo[field.db_field or field.name]
-    #         # (secretly) traverse the document hierarchy top down
-    #         python_fields[field.name] = field.to_python(mongo_value) if \
-    #                                          mongo_value is not None else None
-    #     # cast the resulting dict to this particular model type
-    #     return self.model(**python_fields)
-
     def to_python(self, mongo):
         return self.model(**mongo)
 
