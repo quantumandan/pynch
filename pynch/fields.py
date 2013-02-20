@@ -90,8 +90,8 @@ class ListField(ComplexField):
 
     def to_save(self, lst):
         lst = lst if lst else []
-        to_save = self.field.to_save
-        X = [to_save(x) for x in lst]            # optimization
+        to_save = self.field.to_save             # optimization
+        X = [to_save(x) for x in lst]
         return super(ListField, self).to_save(X)
 
     def to_python(self, lst):
@@ -249,8 +249,13 @@ class ReferenceField(Field):
         # notice that `ReferenceField.to_save` does not call
         # Field's `to_save`
         if document is not None:
-            pk = document.save()
+            # need to validate document first to preserve atomicity
+            # during cascading saves
+            pk = document.validate().save()
+            # just to make sure something hinky isn't going on
             assert pk == document.pk
+            # get all the info needed to point the reference to
+            # the correct database
             name, host, port = self.reference._meta['database']
             # turns the document into a DBRef
             return DBRef(self.reference.__name__, document.pk,
