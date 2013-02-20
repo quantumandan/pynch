@@ -213,10 +213,8 @@ class ModelMetaclass(type):
         if not hasattr(model, '_id'):
             def get_X(doc):
                 return doc.__dict__.setdefault('_id', ObjectId())
-
             def set_X(doc, value):
                 doc.__dict__['_id'] = value
-
             model._id = FieldProxy(get_X, set_X)
 
         # information descriptor allows class level access to
@@ -306,13 +304,14 @@ class Model(object):
             raise DocumentValidationException(
                 'Could not reconstruct document', exceptions=exceptions)
 
+        # synchronize
         self._id = self.pk
 
         # allows up and down casting
         if castable:
             castable = castable[0]
             # `castable` must either belong to a subclass of the
-            # current model, or the current moddel must be a sublcass
+            # current model, or the current model must be a sublcass
             # of castable's model
             assert (isinstance(castable, type(self)) or \
                     isinstance(self, type(castable)))
