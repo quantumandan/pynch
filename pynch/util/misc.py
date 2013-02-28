@@ -11,6 +11,9 @@ class MultiDict(dict):
             for key, value in args[0]:
                 self.setdefault(key, []).append(value)
 
+    def append(self, k, v):
+        self.setdefault(k, []).append(v)
+
 
 UnboundReference = type('UnboundReference', (), {})
 

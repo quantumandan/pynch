@@ -215,34 +215,42 @@ class ReferenceField(Field):
 
     def set(self, name, model):
         super(ReferenceField, self).set(name, model)
-        # rebind reference with an actual class if reference is
-        # an import path (str) or is 'self', otherwise reference
-        # hasn't been read into memory yet, so defer binding
-        if isinstance(self.reference, basestring):
-            model_name = self.reference
-            self.reference = \
-                self.model if 'self' == model_name else \
-                    (import_class(model_name, self._context) or model_name)
-
+        # rebind reference with an actual class
+        self.rebind()
         #  if reference is a basestring then the referent has not been set
         if not isinstance(self.reference, basestring):
             # only allow references to documents
             if not issubclass(self.reference, Model):
                 raise FieldTypeException(self.reference, Model)
-            # only add backrefs when the reference has been rebound
-            self.reference._pynch.backrefs.setdefault(
-                            self.name, set()).add(self.model)
 
-    def __get__(self, document, model=None):
-        # does lazy rebinding of references in the event that
-        # the deed has not already been done
-        if issubclass(self.model, basestring):
-            self.set(self.name, model)
-        # get the value from the document's dictionary
-        return super(ReferenceField, self).__get__(document, model)
+    def rebind(self):
+        # rebind reference with an actual class if reference is
+        # an import path (str) or is 'self', otherwise reference
+        # hasn't been read into memory yet, so defer binding
+        if isinstance(self.reference, basestring):
+            name = self.reference
+            self.reference = self.model if 'self' == name else \
+                            (import_class(name, self._context) or name)
+            # only add backrefs when the reference has been rebound
+            if not isinstance(self.reference, basestring):
+                self.reference._pynch.backrefs.setdefault(
+                                self.name, set()).add(self.model)
+
+    # def __get__(self, document, model=None):
+    #     # does lazy rebinding of references in the event that
+    #     # the deed has not already been done
+    #     if isinstance(self.reference, basestring):
+    #         self.set(self.name, self.model)
+    #     # get the value from the document's dictionary
+    #     return super(ReferenceField, self).__get__(document, model)
+
+    def __set__(self, document, value):
+        if isinstance(self.reference, basestring):
+            self.rebind()
+        super(ReferenceField, self).__set__(document, value)
 
     def __delete__(self, document):
-        self.reference._pynch.backrefs[self.name].remove(self.model)
+        self.reference._pynch.backrefs.get(self.name, set()).remove(self.model)
         super(ReferenceField, self).__delete__(document)
 
     def to_save(self, document):
@@ -270,6 +278,9 @@ class ReferenceField(Field):
         return self.reference(**R)
 
     def validate(self, value):
+        if isinstance(self.reference, basestring):
+            self.rebind()
+
         if not isinstance(value, (self.reference, DBRef)) \
                 and value is not None:
             raise FieldTypeException(type(value), self.reference)

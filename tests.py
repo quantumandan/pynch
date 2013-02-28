@@ -13,15 +13,13 @@ class TestModel(Model):
 class PynchTestSuite(unittest.TestCase):
     def test_this(self):
         jones = BugStomper(name='Mr. Jones')
-        # jones.save()
         me = Gardener(name='Jim', instructor=jones)
-        # me.save()
         garden = Garden(gardener=me, stomper=jones)
         garden.acres = 0.25
         garden.flowers = [Flower(name='rose'), Flower(name='daisy')]
         garden.save()
         x = Garden._pynch.objects.find_one(acres=0.25)
-        print x.stomper.name
+        print x.gardener.instructor
 
     def test_no_pk(self):
         pass
@@ -134,7 +132,7 @@ class IntegerFieldTestSuite(unittest.TestCase):
         a = A(field=123)
         self.assertEquals(a.field, 123)
 
-        self.assertRaises(FieldTypeException, lambda: A(field='abc'))
+        self.assertRaises(DocumentValidationException, lambda: A(field='abc'))
 
     def test_integer_field_as_pk(self):
         class A(TestModel):
@@ -201,7 +199,7 @@ class FloatFieldTestSuite(unittest.TestCase):
         a = A(field=0.123)
         self.assertEquals(a.field, 0.123)
 
-        self.assertRaises(FieldTypeException, lambda: A(field='abc'))
+        self.assertRaises(DocumentValidationException, lambda: A(field='abc'))
 
     def test_float_field_as_pk(self):
         class A(TestModel):
@@ -317,29 +315,29 @@ class BooleanFieldTestSuite(unittest.TestCase):
         class A(TestModel):
             field = BooleanField()
 
-    #     class Phoo(TestModel):
-    #         _meta = {'database': DB('test', 'localhost', 27017)}
-    #         hell = ListField(StringField())
-    #         bliss = ListField(ReferenceField(self.Gardener))
 
-    #     garden.validate()
-    #     # print garden.to_save()
-    #     garden.save()
-    #     g = garden.find_one()
-    #     print g.gardener.instructor
-        # phoo = Phoo(hell=['a', 'b', 'c'], bliss=[me, jones])
-        # print phoo.to_save()
-        # phoo.save()
-        # p = Phoo.find_one()
-        # print garden.to_save()
-        # self.Garden.validate(garden)
-        # p = Phoo()
-        # p.bliss = []
-        # p.bliss.append('me')
-        # p.hell = []
-        # p.hell.append(1)
-        # p.validate()
-        # print p._to_save()
+class A(Base):
+    b = ListField(ReferenceField('B'))
+
+
+class B(Base):
+    c = ListField(ReferenceField('C'))
+
+
+class C(Base):
+    field1 = FloatField()
+    field2 = FloatField()
+
+
+class SearchTestSuite(unittest.TestCase):
+    def test_search(self):
+        a = A()
+        a.b = [B(), B(), B()]
+        for b in a.b:
+            b.c = [C(field1=1.0, field2=1.2),
+                   C(field1=1.0, field2=1.2)]
+
+        self.assertEquals([1.0] * 6, [x for x in a.search('b.c.field1')])
 
 if __name__ == '__main__':
     unittest.main()

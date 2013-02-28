@@ -13,8 +13,8 @@ from pynch.util.field_utils import (check_fields, field_to_save_tuple,
 class Field(object):
     def __new__(cls, *args, **modifiers):
         """
-        necessary so that complex fields and reference fields
-        can import and bind the correct classes
+        Necessary so that reference fields can import and
+        bind the correct classes
         """
         field = super(Field, cls).__new__(cls)
         frame = inspect.stack()[-1][0]  # outermost frame
@@ -89,6 +89,8 @@ class Field(object):
         # primary key must be of type `ObjectId`
         if self.primary_key:
             return ObjectId(X) if not isinstance(X, ObjectId) else X
+        # if self.primary_key:
+        #     return X.pk
 
         # already validated and not a primary key
         return X
@@ -101,6 +103,19 @@ class Field(object):
 
 
 class FieldProxy(property):
+    """
+    A rather ugly hack used to add "computed" fields to a
+    document instance.  To use, define a getter and a setter:
+
+    get_X = lambda self: ...
+    set_X = lambda self: ...
+    proxy = FieldProxy(get_X, set_X)
+
+    class MyModel(Model):
+        pass
+
+    MyModel.computed_field = proxy
+    """
     def to_python(self, value):
         return value
 
@@ -162,7 +177,16 @@ class InformationDescriptor(object):
         return self._connection_pool[key]
 
     def to_python(self, mongo):
-        return self.model(**mongo)
+        python_fields = {}
+        for field in self.fields:
+            # rememeber mongo info is stored with key `field.db_field`
+            # if it is different from `field.name`
+            mongo_value = mongo[field.db_field or field.name]
+            # (secretly) traverse the document hierarchy top down
+            python_fields[field.name] = field.to_python(mongo_value) if \
+                                            mongo_value is not None else None
+        # cast the resulting dict to this particular model type
+        return self.model(**python_fields)
 
     @property
     def objects(self):
@@ -170,7 +194,8 @@ class InformationDescriptor(object):
 
     @property
     def fields(self):
-        return [v for k, v in dir_(self.model).items() if isinstance(v, Field)]
+        items = dir_(self.model).items()
+        return [v for k, v in items if isinstance(v, Field)]
 
 
 class ModelMetaclass(type):
@@ -204,18 +229,23 @@ class ModelMetaclass(type):
         # what classes they are attached to.
         for fieldname, field in attrs.items():
             if isinstance(field, Field):
-                # `pk`, `validate`, `save`, and `delete` are reserved
-                # for pynch, everything else is fair game
+                # `pk`, `validate`, `save`, `delete`, and `search`
+                # are reserved for pynch, everything else is fair game
                 assert fieldname not in ('pk', 'validate',
-                                        'save', 'delete')
+                                        'save', 'delete', 'search')
                 field.set(fieldname, model)
 
+        # Everything must have an `_id`. If none is attached, then
+        # dynamically create one using a FieldProxy
+        # TODO: Remove this crap and replace with either a bonafide
+        #       ObjectIdField or change requirements so that one is
+        #       not necessary.
         if not hasattr(model, '_id'):
-            def get_X(doc):
+            def get_ID(doc):
                 return doc.__dict__.setdefault('_id', ObjectId())
-            def set_X(doc, value):
+            def set_ID(doc, value):
                 doc.__dict__['_id'] = value
-            model._id = FieldProxy(get_X, set_X)
+            model._id = FieldProxy(get_ID, set_ID)
 
         # information descriptor allows class level access to
         # orm functionality
@@ -284,21 +314,27 @@ class Model(object):
         super(Model, self).__init__()
 
         failure_msg = 'Cannot resolve field %s onto document'
-        exceptions = {}
+        exceptions = MultiDict()
 
         for k, v in values.items():
+            # get the actual field, if no such field exists notify the
+            # caller immediately
             cls = self.__class__
             field = getattr(cls, k) if hasattr(cls, k) else \
                         raise_(DocumentValidationException(failure_msg % k))
 
+            # calling to_python traverses the object hierarchy top down
             try:
                 v = field.to_python(v)
             except Exception as e:
-                exceptions[k] = e
+                exceptions.append(k, e)
 
-            # setattr must be called to activate the descriptors,
-            # rather than update the document's __dict__ directly
-            setattr(self, k, v)
+            # setattr must be called to activate the descriptors, rather
+            # than update the document's __dict__ directly
+            try:
+                setattr(self, k, v)
+            except Exception as e:
+                exceptions.append(k, e)
 
         if exceptions:
             raise DocumentValidationException(
@@ -349,7 +385,7 @@ class Model(object):
         # build a mongo compatible dictionary
         mongo = dict(field_to_save_tuple(document, field) \
                                 for field in self._pynch.fields)
-        mongo.setdefault('_id', self._id)
+        mongo.setdefault('_id', self.pk)
         return self._pynch.collection.save(mongo, **kwargs)
 
     def delete(self):
@@ -358,3 +394,35 @@ class Model(object):
             raise Exception('Cant delete documents which '
                             'have no _id or primary key')
         self._pynch.collection.remove(oid)
+
+    def search(self, search_term, obj=None, query_filter=None):
+        """
+        TODO: implement results filtering
+
+        class Petal(Model):
+            color = StringField()
+        class Flower(Model):
+            petals = ListField(ReferenceField(Petal))
+        class Garden(Model):
+            flowers = ListField(ReferenceField(Flowers))
+        ...
+        # yields a generator with all the colors of all
+        # the petals, of all the flowers in the garden
+        >>> garden.search('flowers.petals.color')
+        """
+        # set root
+        obj = obj or self
+        # split dot-notated search term, first element is root
+        terms = search_term.split('.')
+        T, new_T = terms.pop(0), '.'.join(terms)
+        if not T:
+            yield obj
+            raise StopIteration
+        # get the field value at the current level
+        obj = [getattr(obj, T)] if not \
+                isinstance(obj, (list, set)) else (getattr(o, T) for o in obj)
+        # in PY3.3 and greater, this is a perfect example
+        # of when to use the `yield from` syntax
+        for element in obj:
+            for found in self.search(new_T, element):
+                yield found
