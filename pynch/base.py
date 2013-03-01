@@ -95,31 +95,7 @@ class Field(object):
 class FieldProxy(property):
     """
     Is used to add "computed" fields to a document instance.
-    To use, define a getter and a setter.  An example of a
-    useful idiom:
-
-    >>> import random
-    >>> get_X = lambda self: \
-    ...     self.__dict__.setdefault('_value', random.random())
-    >>> set_X = lambda self, value: \
-    ...     self.__dict__.__setitem__('_value', value)
-    >>> proxy = FieldProxy(get_X, set_X, help_text='I am computed')
-    >>> print proxy.help_text
-    I am computed
-    >>> class MyModel(Model):
-    ...    pass
-    >>> MyModel.computed_field = proxy
-
-    then,
-
-    >>> document = MyModel()
-    >>> print document.computed_field
-    0.0821333  # some random number
-    >>> print document.computed_field
-    0.0821333  # same number, default has been set
-    >>> document.computed_field = 2
-    >>> print document.computed_field
-    2
+    To use, define a getter and a setter.
     """
     def __init__(self, fget=None, fset=None,
                  fdel=None, doc=None, **kwargs):
