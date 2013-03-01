@@ -5,7 +5,7 @@ from bson.objectid import ObjectId
 import weakref
 import inspect
 from pynch.errors import *
-from pynch.util.misc import MultiDict, dir_, raise_
+from pynch.util.misc import MultiDict, dir_
 from pynch.util.field_utils import (check_fields, field_to_save_tuple,
                                     get_field_value_or_default)
 
@@ -76,7 +76,7 @@ class Field(object):
             raise AttributeError
 
     def __str__(self):
-        field_unset_msg = '<%s %s field object not set>' % (type(self), id(self))
+        field_unset_msg = '<%s %s field object (not set)>' % (type(self), id(self))
         return getattr(self, 'name', field_unset_msg)
 
     def to_save(self, value):
@@ -176,18 +176,6 @@ class InformationDescriptor(object):
         # otherwise just get what's already there
         return self._connection_pool[key]
 
-    def to_python(self, mongo):
-        python_fields = {}
-        for field in self.fields:
-            # rememeber mongo info is stored with key `field.db_field`
-            # if it is different from `field.name`
-            mongo_value = mongo[field.db_field or field.name]
-            # (secretly) traverse the document hierarchy top down
-            python_fields[field.name] = field.to_python(mongo_value) if \
-                                            mongo_value is not None else None
-        # cast the resulting dict to this particular model type
-        return self.model(**python_fields)
-
     @property
     def objects(self):
         return QueryManager(self.model)
@@ -229,9 +217,10 @@ class ModelMetaclass(type):
         # what classes they are attached to.
         for fieldname, field in attrs.items():
             if isinstance(field, Field):
-                # `pk`, `validate`, `save`, `delete`, and `search`
-                # are reserved for pynch, everything else is fair game
-                assert fieldname not in ('pk', 'validate',
+                # `pk`, `validate`, `save`, `delete`, `search`, and
+                # `to_python` are reserved for pynch, everything else
+                # is fair game
+                assert fieldname not in ('pk', 'validate', 'to_python',
                                         'save', 'delete', 'search')
                 field.set(fieldname, model)
 
@@ -313,26 +302,17 @@ class Model(object):
     def __init__(self, *castable, **values):
         super(Model, self).__init__()
 
-        failure_msg = 'Cannot resolve field %s onto document'
+        # collect all validation failures
         exceptions = MultiDict()
 
         for k, v in values.items():
-            # get the actual field, if no such field exists notify the
-            # caller immediately
-            cls = self.__class__
-            field = getattr(cls, k) if hasattr(cls, k) else \
-                        raise_(DocumentValidationException(failure_msg % k))
-
-            # calling to_python traverses the object hierarchy top down
-            try:
-                v = field.to_python(v)
-            except Exception as e:
-                exceptions.append(k, e)
-
             # setattr must be called to activate the descriptors, rather
             # than update the document's __dict__ directly
             try:
-                setattr(self, k, v)
+                # if v is None then no acceptable value was, for this
+                # field, was passed into the model's constructor
+                if v is not None:
+                    setattr(self, k, v)
             except Exception as e:
                 exceptions.append(k, e)
 
@@ -363,6 +343,22 @@ class Model(object):
                 return getattr(self, field.name)
         # default to _id or give up
         return self._id if hasattr(self, '_id') else None
+
+    @classmethod
+    def to_python(cls, mongo):
+        python_fields = {}
+        for field in cls._pynch.fields:
+            # rememeber mongo info is stored with key `field.db_field`
+            # if it is different from `field.name`
+            fieldname = field.db_field or field.name
+            # and that field might not be present if a no attribute
+            # value was passed in before the document was saved
+            mongo_value = mongo[fieldname] if \
+                        fieldname in mongo else field.default
+            # (secretly) traverse the document hierarchy top down
+            python_fields[field.name] = field.to_python(mongo_value)
+        # cast the resulting dict to this particular model type
+        return cls(**python_fields)
 
     def validate(self):
         assert self.pk, 'Document is missing a primary key'
@@ -406,7 +402,7 @@ class Model(object):
         class Garden(Model):
             flowers = ListField(ReferenceField(Flowers))
         ...
-        # yields a generator with all the colors of all
+        # returns a generator with all the colors of all
         # the petals, of all the flowers in the garden
         >>> garden.search('flowers.petals.color')
         """

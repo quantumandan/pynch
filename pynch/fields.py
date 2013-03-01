@@ -49,8 +49,11 @@ class ComplexField(Field):
         # initialize the type of field inside the container
         if isinstance(self.field, (SimpleField, DynamicField)):
             self.field.set(name, model)
+        # important so that string references are rebound
+        # with actual classes
         if isinstance(self.field, ReferenceField):
             self.field.set(name, self.field.reference)
+
         super(ComplexField, self).set(name, model)
 
     def is_dynamic(self):
@@ -95,8 +98,9 @@ class ListField(ComplexField):
         return super(ListField, self).to_save(X)
 
     def to_python(self, lst):
-        pc = self._to_python_caller              # optimization
-        return [pc(x) for x in lst]
+        if lst is not None:
+            pc = self._to_python_caller          # optimization
+            return [pc(x) for x in lst]
 
     def validate(self, lst):
         if lst is not None:
@@ -121,8 +125,9 @@ class DictField(ComplexField):
         return super(DictField, self).to_save(X)
 
     def to_python(self, dct):
-        pc = self._to_python_caller              # optimization
-        return dict((k, pc(v)) for k, v in dct.items())
+        if dct is not None:
+            pc = self._to_python_caller          # optimization
+            return dict((k, pc(v)) for k, v in dct.items())
 
     def validate(self, dct):
         if dct is not None:
@@ -146,8 +151,9 @@ class GeneratorField(ComplexField):
         return super(GeneratorField, self).to_save(X)
 
     def to_python(self, lst):
-        pc = self._to_python_caller              # optimization
-        return (pc(x) for x in lst)
+        if lst is not None:
+            pc = self._to_python_caller          # optimization
+            return (pc(x) for x in lst)
 
     def validate(self, generator):
         if generator is not None:
@@ -172,8 +178,9 @@ class SetField(ComplexField):
         return super(SetField, self).to_save(X)
 
     def to_python(self, lst):
-        pc = self._to_python_caller              # optimization
-        return set(pc(s) for s in lst)
+        if lst is not None:
+            pc = self._to_python_caller          # optimization
+            return set(pc(s) for s in lst)
 
     def validate(self, iterable):
         if iterable is not None:
@@ -215,7 +222,7 @@ class ReferenceField(Field):
 
     def set(self, name, model):
         super(ReferenceField, self).set(name, model)
-        # rebind reference with an actual class
+        # rebind reference with an actual class (1rst attempt)
         self.rebind()
         #  if reference is a basestring then the referent has not been set
         if not isinstance(self.reference, basestring):
@@ -230,32 +237,31 @@ class ReferenceField(Field):
         if isinstance(self.reference, basestring):
             name = self.reference
             self.reference = self.model if 'self' == name else \
-                            (import_class(name, self._context) or name)
+                    (import_class(name, self._context) or name)
             # only add backrefs when the reference has been rebound
             if not isinstance(self.reference, basestring):
                 self.reference._pynch.backrefs.setdefault(
-                                self.name, set()).add(self.model)
-
-    # def __get__(self, document, model=None):
-    #     # does lazy rebinding of references in the event that
-    #     # the deed has not already been done
-    #     if isinstance(self.reference, basestring):
-    #         self.set(self.name, self.model)
-    #     # get the value from the document's dictionary
-    #     return super(ReferenceField, self).__get__(document, model)
+                              self.name, set()).add(self.model)
 
     def __set__(self, document, value):
+        # rebind reference with an actual class (final attempt)
         if isinstance(self.reference, basestring):
             self.rebind()
+        # cannot use a subclass or a superclass (types must match)
+        if type(value) != self.reference:
+            raise ValidationException(
+                'Value of type %s must be of type %s, and not a sub/super class' \
+                        % (type(value), self.reference))
         super(ReferenceField, self).__set__(document, value)
 
     def __delete__(self, document):
-        self.reference._pynch.backrefs.get(self.name, set()).remove(self.model)
+        self.reference._pynch.backrefs.get(
+                    self.name, set()).remove(self.model)
         super(ReferenceField, self).__delete__(document)
 
     def to_save(self, document):
         # notice that `ReferenceField.to_save` does not call
-        # Field's `to_save`
+        # base class's `to_save`
         if document is not None:
             # need to validate document first to preserve atomicity
             # during cascading saves
@@ -269,13 +275,16 @@ class ReferenceField(Field):
             return DBRef(self.reference.__name__, document.pk,
                          database=name, host=host, port=port)
         # in this case, document will be None
-        return document
+        return None
 
     def to_python(self, dbref):
-        if isinstance(dbref, Model):
-            return dbref
-        R = self.dereference(dbref) or {}
-        return self.reference(**R)
+        # if the dbref is not None then delegate
+        # to the field's model
+        if dbref:
+            return self.reference.to_python(
+                        self.dereference(dbref) or {})
+        # Empty dbref, implies was not set in the db
+        return None
 
     def validate(self, value):
         if isinstance(self.reference, basestring):
@@ -287,10 +296,9 @@ class ReferenceField(Field):
         return value
 
     def dereference(self, dbref):
-        if dbref is not None:
-            key = (dbref.host, dbref.port)
-            db = self.model._pynch._connection_pool[key][dbref.database]
-            return db.dereference(dbref)
+        key = (dbref.host, dbref.port)
+        db = self.model._pynch._connection_pool[key][dbref.database]
+        return db.dereference(dbref)
 
 
 class StringField(SimpleField):

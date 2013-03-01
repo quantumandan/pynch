@@ -19,7 +19,12 @@ class PynchTestSuite(unittest.TestCase):
         garden.flowers = [Flower(name='rose'), Flower(name='daisy')]
         garden.save()
         x = Garden._pynch.objects.find_one(acres=0.25)
-        print x.gardener.instructor
+        # import pdb; pdb.set_trace();
+        # print x.gardener.instructor
+        y = BugStomper._pynch.objects.find_one(name='Mr. Jones')
+        # y = BugStomper._pynch.collection.find_one(name='Mr. Jones')
+        print y
+        import pdb; pdb.set_trace();
 
     def test_no_pk(self):
         pass
