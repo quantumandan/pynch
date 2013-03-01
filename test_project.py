@@ -9,7 +9,7 @@ class Base(Model):
 
 
 class Person(Base):
-    name = StringField(required=True)
+    name = StringField(required=True, primary_key=True)
 
     def __str__(self):
         return self.name

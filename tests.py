@@ -22,9 +22,9 @@ class PynchTestSuite(unittest.TestCase):
         # import pdb; pdb.set_trace();
         # print x.gardener.instructor
         y = BugStomper._pynch.objects.find_one(name='Mr. Jones')
-        # y = BugStomper._pynch.collection.find_one(name='Mr. Jones')
-        print y
-        import pdb; pdb.set_trace();
+        # z = BugStomper._pynch.collection.find_one(name='Mr. Jones')
+        # w = BugStomper(z)
+        # import pdb; pdb.set_trace();
 
     def test_no_pk(self):
         pass
@@ -342,7 +342,7 @@ class SearchTestSuite(unittest.TestCase):
             b.c = [C(field1=1.0, field2=1.2),
                    C(field1=1.0, field2=1.2)]
 
-        self.assertEquals([1.0] * 6, [x for x in a.search('b.c.field1')])
+        self.assertEquals([1.0] * 6, [x for x in a.get('b.c.field1')])
 
 if __name__ == '__main__':
     unittest.main()

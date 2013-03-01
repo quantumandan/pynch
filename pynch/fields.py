@@ -30,8 +30,8 @@ class SimpleField(Field):
 
 class ComplexField(Field):
     """
-    Container field type. Can pass in either an instance of a
-    field or a reference to an existing model.
+    Container field type. Can pass in an instance of a field,
+    else the underlying field type will be dynamic.
 
     The container elements must all be of the same type, unless
     the underlying field type is dynamic.
@@ -70,21 +70,6 @@ class ComplexField(Field):
 class ListField(ComplexField):
     """
     All normal list operations are available. Note that order is preserved.
-
-    class Flower(Model):
-        species = StringField(default='Snarling Fly Eater')
-
-        def __str__(self):
-            return self.species
-
-    class Garden(Model):
-        awards = ListField(StringField())
-        flowers = ListField(ReferenceField(Flower))
-
-    >>> garden = Garden()
-    >>> garden.flowers = [Flower(species='Rose'), Flower(species='Daisy')]
-    >>> print garden.pop(0)
-    Rose
     """
     def __set__(self, document, value):
         if not isinstance(value, list):

@@ -87,8 +87,8 @@ class Field(object):
             X.save()
 
         # primary key must be of type `ObjectId`
-        if self.primary_key:
-            return ObjectId(X) if not isinstance(X, ObjectId) else X
+        # if self.primary_key:
+        #     return ObjectId(X) if not isinstance(X, ObjectId) else X
         # if self.primary_key:
         #     return X.pk
 
@@ -229,12 +229,12 @@ class ModelMetaclass(type):
         # TODO: Remove this crap and replace with either a bonafide
         #       ObjectIdField or change requirements so that one is
         #       not necessary.
-        if not hasattr(model, '_id'):
-            def get_ID(doc):
-                return doc.__dict__.setdefault('_id', ObjectId())
-            def set_ID(doc, value):
-                doc.__dict__['_id'] = value
-            model._id = FieldProxy(get_ID, set_ID)
+        # if not hasattr(model, '_id'):
+        #     def get_ID(doc):
+        #         return doc.__dict__.setdefault('_id', ObjectId())
+        #     def set_ID(doc, value):
+        #         doc.__dict__['_id'] = value
+        #     model._id = FieldProxy(get_ID, set_ID)
 
         # information descriptor allows class level access to
         # orm functionality
@@ -249,53 +249,6 @@ class Model(object):
 
     Notice, that a subclass's _meta attribute inherits from its
     bases.  In other words, _meta attributes "stack".
-
-    from pynch.db import DB
-
-    class Doc_A(Model):
-        _meta = {'index': ['name'],
-                 'database': DB('test', 'localhost', 27017)}
-        name = StringField()
-        ...
-
-    class Doc_B(Doc_A):
-        _meta = {'max_size': 10000}
-        ...
-
-    Doc_B._meta will be:
-
-        _meta = {'index': ['name'], 'max_size': 10000,
-                 'database': DB('test', 'localhost', 27017)}
-
-    Options include,
-    index    := [fieldname, ...]  (default = [])
-    max_size := integer           (default = 10000 bytes)
-
-    Where `database` is a pynch.db.DB object,
-    name     := string            (default = '')
-    host     := string            (default = 'localhost')
-    port     := integer           (default = 27017)
-
-    An interesting application, you can build a distributed,
-    NoSQL database like so:
-
-    class Doc_C(Doc_B):
-        _meta = {'database': DB('test-2')}
-        field = ReferenceField(Doc_B)
-
-    class Doc_D(Doc_B):
-        _meta = {'database': DB('test-3')}
-        field = ReferenceField(Doc_C)
-
-    class Doc_E(Doc_B):
-        _meta = {'database': DB('test-4', '173.1.2.5')}
-        field = ReferenceField(Doc_D)
-
-    Essentially, Docs A-D are stored locally, but in different
-    databases, while Doc_E is stored remotely. Every save and
-    query is automatically routed to the correct database. This
-    works even if subclasses of Model share references across
-    the different databases.
     """
     __metaclass__ = ModelMetaclass
 
@@ -321,7 +274,7 @@ class Model(object):
                 'Could not reconstruct document', exceptions=exceptions)
 
         # synchronize
-        self._id = self.pk
+        # self._id = self.pk
 
         # allows up and down casting
         if castable:
@@ -339,7 +292,7 @@ class Model(object):
         finds the model's primary key, if any
         """
         for field in self._pynch.fields:
-            if field.primary_key:
+            if field.primary_key and hasattr(self, field.name):
                 return getattr(self, field.name)
         # default to _id or give up
         return self._id if hasattr(self, '_id') else None
@@ -361,7 +314,7 @@ class Model(object):
         return cls(**python_fields)
 
     def validate(self):
-        assert self.pk, 'Document is missing a primary key'
+        # assert self.pk, 'Document is missing a primary key'
         # validate fields, collecting exceptions in a dictionary
         exceptions = MultiDict(check_fields(self))
 
