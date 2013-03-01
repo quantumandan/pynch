@@ -218,10 +218,10 @@ class ModelMetaclass(type):
         for fieldname, field in attrs.items():
             if isinstance(field, Field):
                 # `pk`, `validate`, `save`, `delete`, `search`, and
-                # `to_python` are reserved for pynch, everything else
-                # is fair game
+                # `get` are reserved for pynch, everything else is
+                # fair game
                 assert fieldname not in ('pk', 'validate', 'to_python',
-                                        'save', 'delete', 'search')
+                                        'save', 'delete', 'get')
                 field.set(fieldname, model)
 
         # Everything must have an `_id`. If none is attached, then
@@ -391,7 +391,7 @@ class Model(object):
                             'have no _id or primary key')
         self._pynch.collection.remove(oid)
 
-    def search(self, search_term, obj=None, query_filter=None):
+    def get(self, search_term, obj=None, query_filter=None):
         """
         TODO: implement results filtering
 
@@ -404,7 +404,7 @@ class Model(object):
         ...
         # returns a generator with all the colors of all
         # the petals, of all the flowers in the garden
-        >>> garden.search('flowers.petals.color')
+        >>> garden.get('flowers.petals.color')
         """
         # set root
         obj = obj or self
@@ -420,5 +420,5 @@ class Model(object):
         # in PY3.3 and greater, this is a perfect example
         # of when to use the `yield from` syntax
         for element in obj:
-            for found in self.search(new_T, element):
+            for found in self.get(new_T, element):
                 yield found
