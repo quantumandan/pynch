@@ -14,6 +14,9 @@ class DynamicField(Field):
     def validate(self, data):
         return data
 
+    def to_save(self, value):
+        return value
+
 
 class SimpleField(Field):
     """
@@ -26,6 +29,9 @@ class SimpleField(Field):
 
     def validate(self, data):
         return data
+
+    def to_save(self, value):
+        return value
 
 
 class ComplexField(Field):
@@ -55,6 +61,9 @@ class ComplexField(Field):
             self.field.set(name, self.field.reference)
 
         super(ComplexField, self).set(name, model)
+
+    def to_save(self, value):
+        return value
 
     def is_dynamic(self):
         return isinstance(self.field, DynamicField)
@@ -250,9 +259,7 @@ class ReferenceField(Field):
         if document is not None:
             # need to validate document first to preserve atomicity
             # during cascading saves
-            pk = document.validate().save()
-            # just to make sure something hinky isn't going on
-            assert pk == document.pk
+            document.validate().save()
             # get all the info needed to point the reference to
             # the correct database
             name, host, port = self.reference._meta['database']

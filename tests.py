@@ -19,12 +19,12 @@ class PynchTestSuite(unittest.TestCase):
         garden.flowers = [Flower(name='rose'), Flower(name='daisy')]
         garden.save()
         x = Garden._pynch.objects.find_one(acres=0.25)
-        # import pdb; pdb.set_trace();
-        # print x.gardener.instructor
+        self.assertTrue(x.gardener.name == 'Jim')
+        flower_names = [flower.name for flower in x.flowers]
+        self.assertListEqual(flower_names, [u'rose', u'daisy'])
+        self.assertTrue(x.gardener.instructor.name == 'Mr. Jones')
         y = BugStomper._pynch.objects.find_one(name='Mr. Jones')
-        # z = BugStomper._pynch.collection.find_one(name='Mr. Jones')
-        # w = BugStomper(z)
-        # import pdb; pdb.set_trace();
+        self.assertTrue(y.name == 'Mr. Jones')
 
     def test_no_pk(self):
         pass
@@ -84,7 +84,7 @@ class StringFieldTestSuite(unittest.TestCase):
             field = StringField(db_field='new_field')
 
         a = A(field='abc')
-        mongo_id = a.save()
+        mongo_id = a.save().pk
         mongo = A._pynch.collection.find_one({'_id': mongo_id})
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == 'abc')
@@ -151,7 +151,7 @@ class IntegerFieldTestSuite(unittest.TestCase):
             field = IntegerField(db_field='new_field')
 
         a = A(field=123)
-        mongo_id = a.save()
+        mongo_id = a.save().pk
         mongo = A._pynch.collection.find_one({'_id': mongo_id})
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == 123)
@@ -218,7 +218,7 @@ class FloatFieldTestSuite(unittest.TestCase):
             field = FloatField(db_field='new_field')
 
         a = A(field=0.123)
-        mongo_id = a.save()
+        mongo_id = a.save().pk
         mongo = A._pynch.collection.find_one({'_id': mongo_id})
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == 0.123)
@@ -281,7 +281,7 @@ class BooleanFieldTestSuite(unittest.TestCase):
             field = BooleanField(db_field='new_field')
 
         a = A(field=False)
-        mongo_id = a.save()
+        mongo_id = a.save().pk
         mongo = A._pynch.collection.find_one({'_id': mongo_id})
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == False)

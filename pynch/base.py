@@ -1,9 +1,9 @@
 from pynch.query import QueryManager
 from pynch.db import MockDatabase, MockConnection, DB
 import pymongo
-from bson.objectid import ObjectId
 import weakref
 import inspect
+from bson.objectid import ObjectId
 from pynch.errors import *
 from pynch.util.misc import MultiDict, dir_
 from pynch.util.field_utils import (check_fields, field_to_save_tuple,
@@ -27,6 +27,9 @@ class Field(object):
         """
         Base class for all field types. Fields are descriptors that
         manage the validation and typing of a document's attributes.
+
+        Fields marked as a primary key will take precedence over any
+        `_id` field set on the document.
         """
         # primary keys are required
         self.db_field = db_field if not primary_key else '_id'
@@ -80,20 +83,7 @@ class Field(object):
         return getattr(self, 'name', field_unset_msg)
 
     def to_save(self, value):
-        # traverses the validation hierarchy top down
-        X = self.validate(value)
-
-        if isinstance(X, Model):
-            X.save()
-
-        # primary key must be of type `ObjectId`
-        # if self.primary_key:
-        #     return ObjectId(X) if not isinstance(X, ObjectId) else X
-        # if self.primary_key:
-        #     return X.pk
-
-        # already validated and not a primary key
-        return X
+        raise DelegationException('Define in a subclass')
 
     def to_python(self, value):
         raise DelegationException('Define in a subclass')
@@ -229,12 +219,12 @@ class ModelMetaclass(type):
         # TODO: Remove this crap and replace with either a bonafide
         #       ObjectIdField or change requirements so that one is
         #       not necessary.
-        # if not hasattr(model, '_id'):
-        #     def get_ID(doc):
-        #         return doc.__dict__.setdefault('_id', ObjectId())
-        #     def set_ID(doc, value):
-        #         doc.__dict__['_id'] = value
-        #     model._id = FieldProxy(get_ID, set_ID)
+        if not hasattr(model, '_id'):
+            def get_ID(doc):
+                return doc.__dict__.setdefault('_id', ObjectId())
+            def set_ID(doc, value):
+                doc.__dict__['_id'] = value
+            model._id = FieldProxy(get_ID, set_ID)
 
         # information descriptor allows class level access to
         # orm functionality
@@ -273,9 +263,6 @@ class Model(object):
             raise DocumentValidationException(
                 'Could not reconstruct document', exceptions=exceptions)
 
-        # synchronize
-        # self._id = self.pk
-
         # allows up and down casting
         if castable:
             castable = castable[0]
@@ -294,8 +281,9 @@ class Model(object):
         for field in self._pynch.fields:
             if field.primary_key and hasattr(self, field.name):
                 return getattr(self, field.name)
-        # default to _id or give up
-        return self._id if hasattr(self, '_id') else None
+        # default to _id, which either exists on the document or
+        # is the result of a computed field (ie a FieldProxy)
+        return self._id
 
     @classmethod
     def to_python(cls, mongo):
@@ -335,7 +323,8 @@ class Model(object):
         mongo = dict(field_to_save_tuple(document, field) \
                                 for field in self._pynch.fields)
         mongo.setdefault('_id', self.pk)
-        return self._pynch.collection.save(mongo, **kwargs)
+        self._pynch.collection.save(mongo, **kwargs)
+        return document
 
     def delete(self):
         oid = self.pk if self.pk else None
