@@ -183,33 +183,6 @@ class SetField(ComplexField):
 
 
 class ReferenceField(Field):
-    """
-    class Gardener(Model):
-        name = StringField(required=True)
-        instructor = ReferenceField('self')
-
-        def __str__(self):
-            return self.name
-
-    class BugStomper(Model):
-        stomper = ReferenceField(Gardener)
-        number_squashed = IntegerField()
-
-    class Garden(Model):
-        acres = DecimalField()
-        gardeners = ListField(ReferenceField(Gardener))
-
-    >>> person = Gardener(name='me', instructor=Gardener('MrJones'))
-    >>> garden = Garden(acres=0.25, gardeners=[person])
-    >>> print garden.gardeners
-    ['me']
-    >>> print person.instructor.name
-    'MrJones'
-    >>> print Garden.gardener.reference
-    <class 'Gardener' ...>
-    >>> print Gardener._pynch.backrefs
-    set([<class 'Garden' ...>, <class 'Gardener' ...>])
-    """
     def __init__(self, reference, **params):
         self.reference = reference
         super(ReferenceField, self).__init__(**params)

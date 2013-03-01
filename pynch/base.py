@@ -94,23 +94,53 @@ class Field(object):
 
 class FieldProxy(property):
     """
-    A rather ugly hack used to add "computed" fields to a
-    document instance.  To use, define a getter and a setter:
+    Is used to add "computed" fields to a document instance.
+    To use, define a getter and a setter.  An example of a
+    useful idiom:
 
-    get_X = lambda self: ...
-    set_X = lambda self: ...
-    proxy = FieldProxy(get_X, set_X)
+    >>> import random
+    >>> get_X = lambda self: \
+    ...     self.__dict__.setdefault('_value', random.random())
+    >>> set_X = lambda self, value: \
+    ...     self.__dict__.__setitem__('_value', value)
+    >>> proxy = FieldProxy(get_X, set_X, help_text='I am computed')
+    >>> print proxy.help_text
+    I am computed
+    >>> class MyModel(Model):
+    ...    pass
+    >>> MyModel.computed_field = proxy
 
-    class MyModel(Model):
-        pass
+    then,
 
-    MyModel.computed_field = proxy
+    >>> document = MyModel()
+    >>> print document.computed_field
+    0.0821333  # some random number
+    >>> print document.computed_field
+    0.0821333  # same number, default has been set
+    >>> document.computed_field = 2
+    >>> print document.computed_field
+    2
     """
+    def __init__(self, fget=None, fset=None,
+                 fdel=None, doc=None, **kwargs):
+        super(FieldProxy, self).__init__(fget, fset, fdel, doc)
+        self.__dict__.update(kwargs)
+
     def to_python(self, value):
         return value
 
     def validate(self, value):
         return value
+
+
+class PrimaryKeyProxy(FieldProxy):
+    def __init__(self):
+        def get_ID(doc):
+            return doc.__dict__.setdefault('_id', ObjectId())
+        def set_ID(doc, value):
+            doc.__dict__['_id'] = value
+        super(PrimaryKeyProxy, self).__init__(
+                        get_ID, set_ID, primary_key=True)
 
 
 class InformationDescriptor(object):
@@ -216,15 +246,8 @@ class ModelMetaclass(type):
 
         # Everything must have an `_id`. If none is attached, then
         # dynamically create one using a FieldProxy
-        # TODO: Remove this crap and replace with either a bonafide
-        #       ObjectIdField or change requirements so that one is
-        #       not necessary.
         if not hasattr(model, '_id'):
-            def get_ID(doc):
-                return doc.__dict__.setdefault('_id', ObjectId())
-            def set_ID(doc, value):
-                doc.__dict__['_id'] = value
-            model._id = FieldProxy(get_ID, set_ID)
+            model._id = PrimaryKeyProxy()
 
         # information descriptor allows class level access to
         # orm functionality

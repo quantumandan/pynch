@@ -21,10 +21,32 @@ class PynchTestSuite(unittest.TestCase):
         x = Garden._pynch.objects.find_one(acres=0.25)
         self.assertTrue(x.gardener.name == 'Jim')
         flower_names = [flower.name for flower in x.flowers]
-        self.assertListEqual(flower_names, [u'rose', u'daisy'])
+        self.assertListEqual(flower_names, ['rose', 'daisy'])
         self.assertTrue(x.gardener.instructor.name == 'Mr. Jones')
         y = BugStomper._pynch.objects.find_one(name='Mr. Jones')
         self.assertTrue(y.name == 'Mr. Jones')
+
+    def test_this2(self):
+        from pynch.db import DB
+
+        class WorkingGardener(Model):
+            _meta = {'database': DB(name='mygarden')}
+            name = StringField(required=True)
+            instructor = ReferenceField('self')
+
+            def __str__(self):
+                return self.name
+
+        class TeachingGarden(Model):
+            _meta = {'database': DB(name='mygarden')}
+            acres = DecimalField()
+            gardeners = ListField(ReferenceField(WorkingGardener))
+
+        botanist = WorkingGardener(name='MrJones')
+        person = WorkingGardener(name='me', instructor=botanist)
+        garden = TeachingGarden(acres=0.25, gardeners=[person, botanist])
+        garden.save()
+        g = TeachingGarden._pynch.objects.find_one(_id=garden.pk)
 
     def test_no_pk(self):
         pass
