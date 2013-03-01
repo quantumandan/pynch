@@ -129,32 +129,6 @@ class DictField(ComplexField):
             return dict((k, validate(v)) for k, v in dct.items())
 
 
-class GeneratorField(ComplexField):
-    """
-    Same as a ListField but with generators instead.
-    """
-    def __set__(self, document, value):
-        if not isinstance(value, GeneratorType):
-            raise FieldTypeException(type(value), GeneratorType)
-        super(GeneratorField, self).__set__(document, value)
-
-    def to_save(self, generator):
-        generator = generator if generator else []
-        to_save = self.field.to_save             # optimization
-        X = (to_save(x) for x in generator)
-        return super(GeneratorField, self).to_save(X)
-
-    def to_python(self, lst):
-        if lst is not None:
-            pc = self._to_python_caller          # optimization
-            return (pc(x) for x in lst)
-
-    def validate(self, generator):
-        if generator is not None:
-            validate = self.field.validate       # optimization
-            return [validate(x) for x in generator]
-
-
 class SetField(ComplexField):
     def __init__(self, field=None, disjoint_with=None, **modifiers):
         self.disjoint_with = disjoint_with

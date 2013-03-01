@@ -95,7 +95,8 @@ class Field(object):
 class FieldProxy(property):
     """
     Is used to add "computed" fields to a document instance.
-    To use, define a getter and a setter.
+    To use, define a getter and a setter, and any additional
+    attributes you'd like the proxy to have.
     """
     def __init__(self, fget=None, fset=None,
                  fdel=None, doc=None, **kwargs):
@@ -217,7 +218,7 @@ class ModelMetaclass(type):
                 # `get` are reserved for pynch, everything else is
                 # fair game
                 assert fieldname not in ('pk', 'validate', 'to_python',
-                                        'save', 'delete', 'get')
+                                         'save', 'delete', 'get')
                 field.set(fieldname, model)
 
         # Everything must have an `_id`. If none is attached, then
