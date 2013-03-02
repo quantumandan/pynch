@@ -87,7 +87,7 @@ def check_fields(document):
     a tuple containing the field name and exception
     """
     # validate the fields' relationships to each other
-    for field in document._pynch.fields:
+    for field in document.pynch.fields:
         try:
             field_check_required(document, field)
         except ValidationException as e:

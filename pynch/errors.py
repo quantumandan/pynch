@@ -13,6 +13,10 @@ class ConnectionException(ConnectionFailure):
     pass
 
 
+class QueryException(Exception):
+    pass
+
+
 class ValidationException(ValueError):
     pass
 

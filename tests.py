@@ -18,12 +18,14 @@ class PynchTestSuite(unittest.TestCase):
         garden.acres = 0.25
         garden.flowers = [Flower(name='rose'), Flower(name='daisy')]
         garden.save()
-        x = Garden._pynch.objects.find_one(acres=0.25)
+        x = Garden.pynch.find({'acres': 0.25}).next()
+
         self.assertTrue(x.gardener.name == 'Jim')
         flower_names = [flower.name for flower in x.flowers]
         self.assertListEqual(flower_names, ['rose', 'daisy'])
         self.assertTrue(x.gardener.instructor.name == 'Mr. Jones')
-        y = BugStomper._pynch.objects.find_one(name='Mr. Jones')
+
+        y = BugStomper.pynch.get(name='Mr. Jones')
         self.assertTrue(y.name == 'Mr. Jones')
 
     def test_this2(self):
@@ -39,14 +41,28 @@ class PynchTestSuite(unittest.TestCase):
 
         class TeachingGarden(Model):
             _meta = {'database': DB(name='mygarden')}
-            acres = DecimalField()
+            acres = FloatField()
             gardeners = ListField(ReferenceField(WorkingGardener))
 
         botanist = WorkingGardener(name='MrJones')
         person = WorkingGardener(name='me', instructor=botanist)
         garden = TeachingGarden(acres=0.25, gardeners=[person, botanist])
         garden.save()
-        g = TeachingGarden._pynch.objects.find_one(_id=garden.pk)
+        g = TeachingGarden.pynch.get(_id=garden.pk)
+        names = set(name for name in g.search('gardeners.name'))
+        self.assertEquals(names, set(['me', 'MrJones']))
+
+        botanist2 = WorkingGardener(name='MrJones2')
+        person2 = WorkingGardener(name='me2', instructor=botanist2)
+        garden2 = TeachingGarden(acres=0.25, gardeners=[person2, botanist2])
+        garden2.save()
+
+        to_raise = lambda: TeachingGarden.pynch.get(acres=0.25)
+        self.assertRaises(QueryException, to_raise)
+
+        garden2.delete()
+        garden.delete()
+        # answer = TeachingGarden.pynch.get(acres=0.25)
 
     def test_no_pk(self):
         pass
@@ -107,7 +123,7 @@ class StringFieldTestSuite(unittest.TestCase):
 
         a = A(field='abc')
         mongo_id = a.save().pk
-        mongo = A._pynch.collection.find_one({'_id': mongo_id})
+        mongo = A.pynch.collection.find_one({'_id': mongo_id})
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == 'abc')
 
@@ -174,7 +190,7 @@ class IntegerFieldTestSuite(unittest.TestCase):
 
         a = A(field=123)
         mongo_id = a.save().pk
-        mongo = A._pynch.collection.find_one({'_id': mongo_id})
+        mongo = A.pynch.collection.find_one({'_id': mongo_id})
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == 123)
 
@@ -241,7 +257,7 @@ class FloatFieldTestSuite(unittest.TestCase):
 
         a = A(field=0.123)
         mongo_id = a.save().pk
-        mongo = A._pynch.collection.find_one({'_id': mongo_id})
+        mongo = A.pynch.collection.find_one({'_id': mongo_id})
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == 0.123)
 
@@ -304,7 +320,7 @@ class BooleanFieldTestSuite(unittest.TestCase):
 
         a = A(field=False)
         mongo_id = a.save().pk
-        mongo = A._pynch.collection.find_one({'_id': mongo_id})
+        mongo = A.pynch.collection.find_one({'_id': mongo_id})
         self.assertTrue('new_field' in mongo)
         self.assertTrue(mongo['new_field'] == False)
 
@@ -364,7 +380,7 @@ class SearchTestSuite(unittest.TestCase):
             b.c = [C(field1=1.0, field2=1.2),
                    C(field1=1.0, field2=1.2)]
 
-        self.assertEquals([1.0] * 6, [x for x in a.get('b.c.field1')])
+        self.assertEquals([1.0] * 6, [x for x in a.search('b.c.field1')])
 
 if __name__ == '__main__':
     unittest.main()
