@@ -8,7 +8,6 @@ from pynch.errors import *
 from pynch.util.misc import MultiDict, dir_
 from pynch.util.field_utils import (check_fields, field_to_save_tuple,
                                     get_field_value_or_default)
-from pynch.util import query_utils
 
 
 class Field(object):

@@ -199,6 +199,12 @@ class DocumentField(Field):
                         % (type(value), self.reference))
         super(DocumentField, self).__set__(document, value)
 
+    def validate(self, value):
+        if value is not None and \
+            not isinstance(value, self.reference):
+            raise FieldTypeException(type(value), self.reference)
+        return value
+
 
 class ReferenceField(DocumentField):
     def rebind(self):
@@ -213,7 +219,7 @@ class ReferenceField(DocumentField):
         if document is not None:
             # need to validate document first to preserve atomicity
             # during cascading saves
-            document.validate().save()
+            document.save()
             # get all the info needed to point the reference to
             # the correct database
             name, host, port = self.reference._meta['database']
@@ -232,12 +238,6 @@ class ReferenceField(DocumentField):
         # Empty dbref, implies was not set in the db
         return None
 
-    def validate(self, value):
-        if value is not None and \
-            not isinstance(value, (self.reference, DBRef)):
-            raise FieldTypeException(type(value), self.reference)
-        return value
-
     def dereference(self, dbref):
         key = (dbref.host, dbref.port)
         db = self.model.pynch._connection_pool[key][dbref.database]
@@ -247,13 +247,17 @@ class ReferenceField(DocumentField):
 class EmbeddedDocumentField(DocumentField):
     def to_save(self, document):
         if document is not None:
-            return document.validate().save()
+            return document.save()
         return None
 
     def to_python(self, document):
         if document:
             return self.reference.to_python(document)
         return None
+
+    def validate(self, value):
+        super(EmbeddedDocumentField, self).validate(value)
+        return value.validate()
 
 
 class StringField(SimpleField):

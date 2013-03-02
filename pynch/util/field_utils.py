@@ -104,3 +104,7 @@ def check_fields(document):
             field_check_unique(document, field)
         except ValidationException as e:
             yield (field.name, e)
+        try:
+            field.validate(getattr(document, field.name, None))
+        except ValidationException as e:
+            yield (field.name, e)
