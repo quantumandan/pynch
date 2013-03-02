@@ -284,6 +284,9 @@ class Model(object):
             raise DocumentValidationException(
                 'Could not reconstruct document', exceptions=exceptions)
 
+        # synchronize
+        self._id = self.pk
+
         # allows up and down casting
         if castable:
             castable = castable[0]
