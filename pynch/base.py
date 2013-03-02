@@ -300,7 +300,7 @@ class Model(object):
     @property
     def pk(self):
         """
-        finds the model's primary key, if any
+        finds the model's primary key
         """
         for field in self.pynch.fields:
             if field.primary_key and hasattr(self, field.name):
