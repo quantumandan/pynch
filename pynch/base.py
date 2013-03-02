@@ -8,6 +8,7 @@ from pynch.errors import *
 from pynch.util.misc import MultiDict, dir_
 from pynch.util.field_utils import (check_fields, field_to_save_tuple,
                                     get_field_value_or_default)
+from pynch.util import query_utils
 
 
 class Field(object):
@@ -150,11 +151,12 @@ class InformationDescriptor(object):
         self.collection = getattr(self.db, self.model.__name__)
 
     def __get__(self, document, model=None):
+        # always returns itself
         return self
 
     def __set__(self, document, value):
-        # bad things happen if _pynch goes away
-        raise NotImplementedError('Cannot overwrite _pynch')
+        # bad things happen if pynch goes away
+        raise NotImplementedError('Cannot overwrite pynch')
 
     def connect(self, host, port):
         """
@@ -181,6 +183,27 @@ class InformationDescriptor(object):
     def fields(self):
         items = dir_(self.model).items()
         return [v for k, v in items if isinstance(v, Field)]
+
+    def _raw_find(self, dictionary):
+        for fieldname in dictionary.keys():
+            field = getattr(self.model, fieldname)
+            if field.primary_key:
+                dictionary['_id'] = dictionary.pop(fieldname)
+        return self.collection.find(dictionary)
+
+    def find(self, dictionary):
+        results = self._raw_find(dictionary)
+        if results is not None:
+            return (self.model.to_python(x) for x in results)
+        raise QueryException('No matching documents')
+
+    def get(self, **kwargs):
+        results = self._raw_find(kwargs)
+        if results is None:
+            raise QueryException('No matching documents')
+        if results.count() > 1:
+            raise QueryException('Multiple objects fouund')
+        return self.model.to_python(results.next())
 
 
 class ModelMetaclass(type):
@@ -214,11 +237,10 @@ class ModelMetaclass(type):
         # what classes they are attached to.
         for fieldname, field in attrs.items():
             if isinstance(field, Field):
-                # `pk`, `validate`, `save`, `delete`, `search`, and
-                # `get` are reserved for pynch, everything else is
-                # fair game
+                # `pk`, `validate`, `to_python`, `save`, `delete`, `get`,
+                # and `pynch` are reserved, everything else is fair game
                 assert fieldname not in ('pk', 'validate', 'to_python',
-                                         'save', 'delete', 'get')
+                                         'save', 'delete', 'get', 'pynch')
                 field.set(fieldname, model)
 
         # Everything must have an `_id`. If none is attached, then
@@ -228,7 +250,7 @@ class ModelMetaclass(type):
 
         # information descriptor allows class level access to
         # orm functionality
-        model._pynch = InformationDescriptor(model)
+        model.pynch = InformationDescriptor(model)
         # DON'T FORGET TO CALL type's init
         super(ModelMetaclass, model).__init__(name, bases, attrs)
 
@@ -278,7 +300,7 @@ class Model(object):
         """
         finds the model's primary key, if any
         """
-        for field in self._pynch.fields:
+        for field in self.pynch.fields:
             if field.primary_key and hasattr(self, field.name):
                 return getattr(self, field.name)
         # default to _id, which either exists on the document or
@@ -288,7 +310,7 @@ class Model(object):
     @classmethod
     def to_python(cls, mongo):
         python_fields = {}
-        for field in cls._pynch.fields:
+        for field in cls.pynch.fields:
             # rememeber mongo info is stored with key `field.db_field`
             # if it is different from `field.name`
             fieldname = field.db_field or field.name
@@ -321,9 +343,9 @@ class Model(object):
 
         # build a mongo compatible dictionary
         mongo = dict(field_to_save_tuple(document, field) \
-                                for field in self._pynch.fields)
+                                for field in self.pynch.fields)
         mongo.setdefault('_id', self.pk)
-        self._pynch.collection.save(mongo, **kwargs)
+        self.pynch.collection.save(mongo, **kwargs)
         return document
 
     def delete(self):
@@ -331,9 +353,9 @@ class Model(object):
         if oid is None:
             raise Exception('Cant delete documents which '
                             'have no _id or primary key')
-        self._pynch.collection.remove(oid)
+        self.pynch.collection.remove(oid)
 
-    def get(self, search_term, obj=None, query_filter=None):
+    def search(self, search_term, obj=None, query_filter=None):
         """
         TODO: implement results filtering
 
@@ -344,13 +366,21 @@ class Model(object):
         class Garden(Model):
             flowers = ListField(ReferenceField(Flowers))
         ...
-        # returns a generator with all the colors of all
-        # the petals, of all the flowers in the garden
-        >>> garden.get('flowers.petals.color')
+        # returns a generator with the colors of all the
+        # red or blue hued petals, of all the flowers in
+        # the garden.
+        hue = Q(color='red') | Q(color='blue')
+        garden.search('flowers.petals.color', hue)
+
+        # same as above, but further filters according to petal
+        # densities less than or equal to 2
+        sparse = hue - Q(density__leq=2)
+        garden.search('flowers.petals.color', sparse)
         """
         # set root
         obj = obj or self
-        # split dot-notated search term, first element is root
+        # split dot-notated search term, first element corresponds
+        # to the root attribute
         terms = search_term.split('.')
         T, new_T = terms.pop(0), '.'.join(terms)
         if not T:
@@ -362,5 +392,5 @@ class Model(object):
         # in PY3.3 and greater, this is a perfect example
         # of when to use the `yield from` syntax
         for element in obj:
-            for found in self.get(new_T, element):
+            for found in self.search(new_T, element):
                 yield found
