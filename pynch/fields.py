@@ -1,8 +1,7 @@
 from pynch.errors import FieldTypeException, DelegationException, ValidationException
 from pynch.util.misc import import_class
-from pynch.base import Field, Model
+from pynch.base import Field
 from bson.dbref import DBRef
-from types import GeneratorType
 import re
 
 
@@ -57,8 +56,8 @@ class ComplexField(Field):
             self.field.set(name, model)
         # since `set` is normally called by the model's metaclass,
         # when wrapping a DocumentField in a ComplexField it is
-        # important so that string references are rebound with the
-        # actual classes
+        # important to manually call `set` so that string references
+        # are rebound with the actual classes
         if isinstance(self.field, DocumentField):
             self.field.set(name, self.field.reference)
 
@@ -69,6 +68,10 @@ class ComplexField(Field):
         if isinstance(self.field, DocumentField) and \
             isinstance(self.field.reference, basestring):
             self.field.rebind()
+            # if rebinding hasn't succeeded by this point then the
+            # reference is invalid
+            if isinstance(self.field.reference, basestring):
+                raise ValidationException('Failed to rebind references')
         super(ComplexField, self).__set__(document, value)
 
     def to_save(self, value):
@@ -172,15 +175,13 @@ class DocumentField(Field):
 
     def set(self, name, model):
         super(DocumentField, self).set(name, model)
-        # rebind reference with an actual class (this handles the
-        # canonical use case where a valid class, not a string
-        # reference, has been passed in to the constructor)
         self.rebind()
 
     def rebind(self):
-        # rebind reference with an actual class if reference is
-        # an import path (str) or is 'self', otherwise reference
-        # hasn't been read into memory yet, so defer binding
+        # rebind reference with an actual class if reference is an
+        # import path (str) or is 'self', otherwise reference hasn't
+        # been read into memory yet, so defer binding until the first
+        # time we try and set a value on the field's document
         if isinstance(self.reference, basestring):
             name = self.reference
             self.reference = self.model if 'self' == name else \
@@ -192,10 +193,14 @@ class DocumentField(Field):
         # attempt at rebinding)
         if isinstance(self.reference, basestring):
             self.rebind()
+            # if rebinding hasn't succeeded by this point then the
+            # reference is invalid
+            if isinstance(self.reference, basestring):
+                raise ValidationException('Failed to rebind references')
         # cannot use a subclass or a superclass (types must match)
         if type(value) != self.reference:
             raise ValidationException(
-                'Value of type %s must be of type %s, and not a sub/super class' \
+                'Value of type %s must be exactly of type %s' \
                         % (type(value), self.reference))
         super(DocumentField, self).__set__(document, value)
 
