@@ -55,12 +55,21 @@ class ComplexField(Field):
         # initialize the type of field inside the container
         if isinstance(self.field, (SimpleField, DynamicField)):
             self.field.set(name, model)
-        # important so that string references are rebound
-        # with actual classes
-        if isinstance(self.field, ReferenceField):
+        # since `set` is normally called by the model's metaclass,
+        # when wrapping a DocumentField in a ComplexField it is
+        # important so that string references are rebound with the
+        # actual classes
+        if isinstance(self.field, DocumentField):
             self.field.set(name, self.field.reference)
 
         super(ComplexField, self).set(name, model)
+
+    def __set__(self, document, value):
+        # rebind reference with an actual class
+        if isinstance(self.field, DocumentField) and \
+            isinstance(self.field.reference, basestring):
+            self.field.rebind()
+        super(ComplexField, self).__set__(document, value)
 
     def to_save(self, value):
         return value
@@ -156,20 +165,17 @@ class SetField(ComplexField):
             return [validate(s) for s in iterable]
 
 
-class ReferenceField(Field):
+class DocumentField(Field):
     def __init__(self, reference, **params):
         self.reference = reference
-        super(ReferenceField, self).__init__(**params)
+        super(DocumentField, self).__init__(**params)
 
     def set(self, name, model):
-        super(ReferenceField, self).set(name, model)
-        # rebind reference with an actual class (1rst attempt)
+        super(DocumentField, self).set(name, model)
+        # rebind reference with an actual class (this handles the
+        # canonical use case where a valid class, not a string
+        # reference, has been passed in to the constructor)
         self.rebind()
-        #  if reference is a basestring then the referent has not been set
-        if not isinstance(self.reference, basestring):
-            # only allow references to documents
-            if not issubclass(self.reference, Model):
-                raise FieldTypeException(self.reference, Model)
 
     def rebind(self):
         # rebind reference with an actual class if reference is
@@ -179,13 +185,11 @@ class ReferenceField(Field):
             name = self.reference
             self.reference = self.model if 'self' == name else \
                     (import_class(name, self._context) or name)
-            # only add backrefs when the reference has been rebound
-            if not isinstance(self.reference, basestring):
-                self.reference._pynch.backrefs.setdefault(
-                              self.name, set()).add(self.model)
 
     def __set__(self, document, value):
-        # rebind reference with an actual class (final attempt)
+        # rebind reference with an actual class (this handles the
+        # case that the reference was not in memory during the first
+        # attempt at rebinding)
         if isinstance(self.reference, basestring):
             self.rebind()
         # cannot use a subclass or a superclass (types must match)
@@ -193,12 +197,15 @@ class ReferenceField(Field):
             raise ValidationException(
                 'Value of type %s must be of type %s, and not a sub/super class' \
                         % (type(value), self.reference))
-        super(ReferenceField, self).__set__(document, value)
+        super(DocumentField, self).__set__(document, value)
 
-    def __delete__(self, document):
-        self.reference._pynch.backrefs.get(
-                    self.name, set()).remove(self.model)
-        super(ReferenceField, self).__delete__(document)
+
+class ReferenceField(DocumentField):
+    def rebind(self):
+        super(ReferenceField, self).rebind()
+        # only add backrefs when the reference has been rebound
+        if not isinstance(self.reference, basestring):
+            self.reference.pynch.backrefs[self] = self.model
 
     def to_save(self, document):
         # notice that `ReferenceField.to_save` does not call
@@ -217,8 +224,8 @@ class ReferenceField(Field):
         return None
 
     def to_python(self, dbref):
-        # if the dbref is not None then delegate
-        # to the field's model
+        # if the dbref is not None then delegate to
+        # the field's model
         if dbref:
             return self.reference.to_python(
                         self.dereference(dbref) or {})
@@ -226,18 +233,27 @@ class ReferenceField(Field):
         return None
 
     def validate(self, value):
-        if isinstance(self.reference, basestring):
-            self.rebind()
-
-        if not isinstance(value, (self.reference, DBRef)) \
-                and value is not None:
+        if value is not None and \
+            not isinstance(value, (self.reference, DBRef)):
             raise FieldTypeException(type(value), self.reference)
         return value
 
     def dereference(self, dbref):
         key = (dbref.host, dbref.port)
-        db = self.model._pynch._connection_pool[key][dbref.database]
+        db = self.model.pynch._connection_pool[key][dbref.database]
         return db.dereference(dbref)
+
+
+class EmbeddedDocumentField(DocumentField):
+    def to_save(self, document):
+        if document is not None:
+            return document.validate().save()
+        return None
+
+    def to_python(self, document):
+        if document:
+            return self.reference.to_python(document)
+        return None
 
 
 class StringField(SimpleField):
