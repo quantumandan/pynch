@@ -64,6 +64,18 @@ class PynchTestSuite(unittest.TestCase):
         garden.delete()
         # answer = TeachingGarden.pynch.get(acres=0.25)
 
+    def test_complex_pk(self):
+        class CompoundPkModel(Model):
+            _meta = {'database': DB(name='compoundpk')}
+            _id = DictField({'a': StringField(),
+                             'b': StringField()}, primary_key=True)
+
+        document1 = CompoundPkModel(_id={'a': 'key a', 'b': 'key b'})
+        document2 = CompoundPkModel(_id={'b': 'a'})
+        document1.save()
+        document2.save()
+        import pdb; pdb.set_trace();
+
     def test_no_pk(self):
         pass
 

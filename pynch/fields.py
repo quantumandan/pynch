@@ -10,6 +10,10 @@ class DynamicField(Field):
     Marker class for fields that can take data of any type.
     Does no actual validation.
     """
+    # here for List/DictField support
+    def __getitem__(self, key):
+        return self
+
     def validate(self, data):
         return data
 
@@ -42,9 +46,6 @@ class ComplexField(Field):
     the underlying field type is dynamic.
     """
     def __init__(self, field=None, **params):
-        # ComplexField's cannot be primary keys
-        assert not params.pop('primary_key', False), \
-                    "ComplexFields may not be primary keys"
         # a reference to the type of each element in the field
         self.field = field if field else DynamicField()
         # all other fields are a go
@@ -117,7 +118,15 @@ class ListField(ComplexField):
 class DictField(ComplexField):
     """
     Almost identical to a ListField. All normal dict operations
-    are available.
+    are available. Unlike other ComplexFields, a DictField can
+    be used as a primary key, to be used as compound pk's.
+
+    class DynamicCompoundPkModel(Model):
+        _id = DictField(primary_key=True)
+
+    class TypedCompoundPkModel(Model):
+        name = DictField({'first_name':StringField(),
+                          'last_name':StringField()}, primary_key=True)
     """
     def __set__(self, document, value):
         if not isinstance(value, dict):
@@ -126,19 +135,21 @@ class DictField(ComplexField):
 
     def to_save(self, dct):
         dct = dct if dct else {}
-        to_save = self.field.to_save             # optimization
-        X = dict((k, to_save(v)) for k, v in dct.items())
+        X = dict((k, self.field[k].to_save(v)) for k, v in dct.items())
         return super(DictField, self).to_save(X)
 
     def to_python(self, dct):
         if dct is not None:
             pc = self._to_python_caller          # optimization
-            return dict((k, pc(v)) for k, v in dct.items())
+            return dict((k, pc(k, v)) for k, v in dct.items())
 
     def validate(self, dct):
         if dct is not None:
-            validate = self.field.validate       # optimization
-            return dict((k, validate(v)) for k, v in dct.items())
+            return dict((k, self.field[k].validate(v)) for k, v in dct.items())
+
+    def _to_python_caller(self, k, x):
+        basetypes = SimpleField.BASE_TYPES
+        return x if isinstance(x, basetypes) else self.field[k].to_python(x)
 
 
 class SetField(ComplexField):
