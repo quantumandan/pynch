@@ -14,11 +14,13 @@ class Field(object):
     def __new__(cls, *args, **modifiers):
         """
         Necessary so that reference fields can import and
-        bind the correct classes
+        bind the correct classes when their models' reside
+        in a module being run as a script (ie in the unittests)
         """
         field = super(Field, cls).__new__(cls)
         frame = inspect.stack()[-1][0]  # outermost frame
         field._context = frame.f_locals.get('__name__', '')
+        del frame
         return field
 
     def __init__(self, db_field=None, required=False, default=None,

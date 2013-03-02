@@ -65,8 +65,10 @@ class PynchTestSuite(unittest.TestCase):
         # answer = TeachingGarden.pynch.get(acres=0.25)
 
     def test_complex_pk(self):
-        class CompoundPkModel(Model):
-            _meta = {'database': DB(name='compoundpk')}
+        class BasePkModel(Model):
+            _meta = {'database': DB(name='complexpk')}
+
+        class CompoundPkModel(BasePkModel):
             _id = DictField({'a': StringField(),
                              'b': StringField()}, primary_key=True)
 
@@ -74,7 +76,17 @@ class PynchTestSuite(unittest.TestCase):
         document2 = CompoundPkModel(_id={'b': 'a'})
         document1.save()
         document2.save()
-        import pdb; pdb.set_trace();
+
+        class A(BasePkModel):
+            pass
+
+        class CompositePkModel(BasePkModel):
+            _id = DictField({'a': ReferenceField(A),
+                             'b': StringField()}, primary_key=True)
+
+        b = B(_id={'a': A(), 'b': 'key b'})
+        b.save()
+        # import pdb; pdb.set_trace();
 
     def test_no_pk(self):
         pass
