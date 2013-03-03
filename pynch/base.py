@@ -200,10 +200,13 @@ class InformationDescriptor(object):
 
     def get(self, **kwargs):
         results = self._raw_find(kwargs)
+        # query returns nothing
         if results is None:
             raise QueryException('No matching documents')
+        # whoops query doesnt have unique result
         if results.count() > 1:
             raise QueryException('Multiple objects fouund')
+
         return self.model.to_python(results.next())
 
 
@@ -217,7 +220,8 @@ class ModelMetaclass(type):
         base_attrs = dict(bases[0].__dict__)
 
         # default _meta
-        _meta = {'index': [], 'max_size': 10000000, 'database': DB()}
+        _meta = {'index': [], 'max_size': 10000000, 'database': DB(),
+                 'write_concern': 1, 'index': []}
 
         # pull out _meta modifier, then merge with that of current class
         _meta.update(base_attrs.pop('_meta', {}))
@@ -230,28 +234,29 @@ class ModelMetaclass(type):
         # the new class's __dict__
         namespace.update(attrs)
 
+        # Everything must have an `_id`. If none is attached, then
+        # dynamically create one using a computed field
+        namespace.setdefault('_id', PrimaryKeyProxy())
+
         return super(ModelMetaclass, meta).__new__(
                             meta, name, bases, namespace)
 
     def __init__(model, name, bases, attrs):
-        # Necessary so that field descriptors can determine
-        # what classes they are attached to.
-        for fieldname, field in attrs.items():
-            if isinstance(field, Field):
-                # `pk`, `validate`, `to_python`, `save`, `delete`, `get`,
-                # and `pynch` are reserved, everything else is fair game
-                assert fieldname not in ('pk', 'validate', 'to_python',
-                                         'save', 'delete', 'get', 'pynch')
-                field.set(fieldname, model)
-
-        # Everything must have an `_id`. If none is attached, then
-        # dynamically create one using a FieldProxy
-        if not hasattr(model, '_id'):
-            model._id = PrimaryKeyProxy()
-
         # information descriptor allows class level access to
         # orm functionality
         model.pynch = InformationDescriptor(model)
+
+        for fieldname, field in attrs.items():
+            if isinstance(field, Field):
+                # Necessary so that field descriptors can determine
+                # what classes they are attached to.
+                field.set(fieldname, model)
+
+                # fields named `_id` are automatically indexed by mongo
+                if (field.primary_key or field.unique) and field.name != '_id':
+                    model.pynch.collection.create_index(
+                            field.db_field or field.name, unique=True)
+
         # DON'T FORGET TO CALL type's init
         super(ModelMetaclass, model).__init__(name, bases, attrs)
 
@@ -299,16 +304,28 @@ class Model(object):
                     isinstance(self, type(castable)))
             self.__dict__.update(castable.__dict__)
 
+    def __eq__(self, document):
+        """
+        This is very expensive for models with many fields, use accordingly.
+        """
+        combined = set(self.pynch.fields) | set(document.pynch.fields)
+        for field in combined:
+            attr1 = getattr(self, field.name, None)
+            attr2 = getattr(document, field.name, None)
+            if attr1 != attr2:
+                return False
+        return True
+
     @property
     def pk(self):
         """
-        finds the model's primary key
+        Finds the model's primary key. Defaults to `_id`, which
+        either exists in the document or is the result of a computed
+        field (ie a FieldProxy)
         """
         for field in self.pynch.fields:
             if field.primary_key and hasattr(self, field.name):
                 return getattr(self, field.name)
-        # default to _id, which either exists on the document or
-        # is the result of a computed field (ie a FieldProxy)
         return self._id
 
     @classmethod
@@ -326,6 +343,11 @@ class Model(object):
             python_fields[field.name] = field.to_python(mongo_value)
         # cast the resulting dict to this particular model type
         return cls(**python_fields)
+
+    def to_mongo(self):
+        mongo = dict(field_to_save_tuple(self, field) \
+                                for field in self.pynch.fields)
+        return mongo
 
     def validate(self):
         # assert self.pk, 'Document is missing a primary key'
@@ -346,10 +368,14 @@ class Model(object):
         document = self.validate()
 
         # build a mongo compatible dictionary
-        mongo = dict(field_to_save_tuple(document, field) \
-                                for field in self.pynch.fields)
+        mongo = self.to_mongo()
+
+        # attach a pk if not present
         mongo.setdefault('_id', self.pk)
-        self.pynch.collection.save(mongo, **kwargs)
+
+        self.pynch.collection.save(
+            mongo, w=self._meta['write_concern'], **kwargs)
+
         return document
 
     def delete(self):
@@ -358,43 +384,3 @@ class Model(object):
             raise Exception('Cant delete documents which '
                             'have no _id or primary key')
         self.pynch.collection.remove(oid)
-
-    def search(self, search_term, obj=None, query_filter=None):
-        """
-        TODO: implement results filtering
-
-        class Petal(Model):
-            color = StringField()
-        class Flower(Model):
-            petals = ListField(ReferenceField(Petal))
-        class Garden(Model):
-            flowers = ListField(ReferenceField(Flowers))
-        ...
-        # returns a generator with the colors of all the
-        # red or blue hued petals, of all the flowers in
-        # the garden.
-        hue = Q(color='red') | Q(color='blue')
-        garden.search('flowers.petals.color', hue)
-
-        # same as above, but further filters according to petal
-        # densities less than or equal to 2
-        sparse = hue - Q(density__leq=2)
-        garden.search('flowers.petals.color', sparse)
-        """
-        # set root
-        obj = obj or self
-        # split dot-notated search term, first element corresponds
-        # to the root attribute
-        terms = search_term.split('.')
-        T, new_T = terms.pop(0), '.'.join(terms)
-        if not T:
-            yield obj
-            raise StopIteration
-        # get the field value at the current level
-        obj = [getattr(obj, T)] if not \
-                isinstance(obj, (list, set)) else (getattr(o, T) for o in obj)
-        # in PY3.3 and greater, this is a perfect example
-        # of when to use the `yield from` syntax
-        for element in obj:
-            for found in self.search(new_T, element):
-                yield found
