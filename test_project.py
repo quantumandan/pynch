@@ -1,5 +1,5 @@
 from test_settings import settings
-from pynch.base import Model, PrimaryKey
+from pynch.model import Model
 from pynch.fields import *
 from pynch.errors import *
 

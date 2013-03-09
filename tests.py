@@ -1,6 +1,6 @@
 import unittest
 from pynch.db import DB
-from pynch.base import Model, PrimaryKey
+from pynch.model import Model, PrimaryKey
 from pynch.query import search
 from pynch.fields import *
 from pynch.errors import *
