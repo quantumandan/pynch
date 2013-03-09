@@ -107,7 +107,22 @@ class FieldProxy(property):
     """
     Is used to add "computed" fields to a document instance.
     To use, define a getter and a setter, and any additional
-    attributes you'd like the proxy to have.
+    attributes you'd like the proxy to have. An example of
+    how you could make a fake pk is:
+
+    class PK(FieldProxy):
+    def __init__(self, **kwargs):
+        kwargs['primary_key'] = True
+        kwargs['unique'] = True
+
+        # define getters and setters
+        def get_ID(doc):
+            return doc.__dict__.setdefault('_id', ObjectId())
+
+        def set_ID(doc, value):
+            doc.__dict__['_id'] = value
+
+        super(PK, self).__init__(get_ID, set_ID, **kwargs)
     """
     def __init__(self, fget=None, fset=None,
                  fdel=None, doc=None, field=None, **kwargs):
@@ -503,6 +518,18 @@ class EmbeddedDocumentField(DocumentField):
         return value.validate()
 
 
+class PrimaryKey(SimpleField):
+    def __init__(self, **kwargs):
+        kwargs['primary_key'] = True
+        kwargs['unique'] = True
+        super(PrimaryKey, self).__init__(**kwargs)
+
+    def __get__(self, document, model=None):
+        if document is None:
+            return self
+        return document.__dict__.setdefault('_id', ObjectId())
+
+
 class ComplexPrimaryKey(DictField):
     def set(self, name, model):
         """
@@ -517,21 +544,6 @@ class ComplexPrimaryKey(DictField):
             field.required = True
 
         super(ComplexPrimaryKey, self).set(name, model)
-
-
-class PrimaryKey(FieldProxy):
-    def __init__(self, **kwargs):
-        kwargs['primary_key'] = True
-        kwargs['unique'] = True
-
-        # define getters and setters
-        def get_ID(doc):
-            return doc.__dict__.setdefault('_id', ObjectId())
-
-        def set_ID(doc, value):
-            doc.__dict__['_id'] = value
-
-        super(PrimaryKey, self).__init__(get_ID, set_ID, **kwargs)
 
 
 class StringField(SimpleField):
