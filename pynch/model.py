@@ -127,7 +127,7 @@ class Model(object):
         Finds the model's primary key, and sets one if one not already set.
         """
         primary_key_field = self.pynch.primary_key_field
-        return self.__dict__.setdefault(primary_key_field.name, ObjectId())
+        return self.__dict__.setdefault(primary_key_field.name, self._id)
 
     @classmethod
     def to_python(cls, mongo):
@@ -147,11 +147,11 @@ class Model(object):
 
     def to_mongo(self):
         # returns tuples with value (field name, mongo value)
-        def field_to_save_tuple(document, field):
-            attr = getattr(document, field.name, None)
+        def field_to_save_tuple(field):
+            attr = getattr(self, field.name, None)
             return (field.db_field or field.name, field.to_save(attr))
         # collect mongo tuples into a dictionary
-        mongo = dict(field_to_save_tuple(self, field) \
+        mongo = dict(field_to_save_tuple(field) \
                                 for field in self.pynch.fields)
         return mongo
 
