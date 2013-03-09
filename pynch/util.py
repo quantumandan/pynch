@@ -24,7 +24,7 @@ def import_class(to_import, context=''):
     # such things occur when running a module as a script,
     # in which case context would be `__main__`
     if '.' not in to_import:
-        module  = context
+        module = context
         clsname = to_import
     else:
         # rightmost period demarcates the end of the import
@@ -33,7 +33,7 @@ def import_class(to_import, context=''):
         # gets the full number of characters in the import path
         n = len(to_import)
         # everything before the rightmost period
-        module  = to_import[0:d]
+        module = to_import[0:d]
         # everything after the rightmost period
         clsname = to_import[d+1:n]
 

@@ -1,5 +1,5 @@
 from test_settings import settings
-from pynch.base import Model
+from pynch.base import Model, PrimaryKey
 from pynch.fields import *
 from pynch.errors import *
 
@@ -22,7 +22,7 @@ class Bug(Base):
 
 
 class Flower(Base):
-    name = StringField(required=True)
+    name = StringField(primary_key=True)
 
     def __str__(self):
         return self.name
@@ -42,6 +42,7 @@ class BugStomper(Gardener):
 
 class Garden(Base):
     _meta = {'database': settings['Garden_db']}
+    _id = PrimaryKey()
     acres = FloatField()
     gardener = ReferenceField(Gardener,  unique_with=['stomper'])
     flowers = ListField(ReferenceField(Flower))

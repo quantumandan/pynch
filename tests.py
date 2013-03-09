@@ -1,46 +1,49 @@
 import unittest
-from pynch.base import Model
 from pynch.db import DB
+from pynch.base import Model, PrimaryKey
+from pynch.query import search
 from pynch.fields import *
 from pynch.errors import *
 from test_project import *
 
 
 class TestModel(Model):
-    _meta = {'database': DB(name='test')}
+    _meta = {'database': DB(name='test'), 'write_concern': 1}
 
 
 class PynchTestSuite(unittest.TestCase):
     def test_this(self):
+        Garden.pynch.collection.remove()
         jones = BugStomper(name='Mr. Jones')
         me = Gardener(name='Jim', instructor=jones)
         garden = Garden(gardener=me, stomper=jones)
         garden.acres = 0.25
         garden.flowers = [Flower(name='rose'), Flower(name='daisy')]
         garden.save()
-        x = Garden.pynch.find({'acres': 0.25}).next()
-
+        x = Garden.pynch.get(_id=garden.pk)
         self.assertTrue(x.gardener.name == 'Jim')
         flower_names = [flower.name for flower in x.flowers]
         self.assertListEqual(flower_names, ['rose', 'daisy'])
         self.assertTrue(x.gardener.instructor.name == 'Mr. Jones')
-
-        y = BugStomper.pynch.get(name='Mr. Jones')
+        self.assertEquals(x.pk, garden.pk)
+        # self.assertEquals(x, garden)
+        y = BugStomper.pynch.get(_id='Mr. Jones')
         self.assertTrue(y.name == 'Mr. Jones')
 
     def test_this2(self):
         from pynch.db import DB
 
         class WorkingGardener(Model):
-            _meta = {'database': DB(name='mygarden')}
-            name = StringField(required=True)
+            _meta = {'database': DB(name='mygarden'), 'write_concern': 1}
+            name = StringField(primary_key=True)
             instructor = ReferenceField('self')
 
             def __str__(self):
                 return self.name
 
         class TeachingGarden(Model):
-            _meta = {'database': DB(name='mygarden')}
+            _meta = {'database': DB(name='mygarden'), 'write_concern': 1}
+            _id = PrimaryKey()
             acres = FloatField()
             gardeners = ListField(ReferenceField(WorkingGardener))
 
@@ -49,8 +52,10 @@ class PynchTestSuite(unittest.TestCase):
         garden = TeachingGarden(acres=0.25, gardeners=[person, botanist])
         garden.save()
         g = TeachingGarden.pynch.get(_id=garden.pk)
-        names = set(name for name in g.search('gardeners.name'))
-        self.assertEquals(names, set(['me', 'MrJones']))
+        self.assertEquals(g.pk, garden.pk)
+        names = list(name for name in search(g, 'gardeners.name'))
+        self.assertEquals(names, ['me', 'MrJones'])
+        self.assertEquals(g, garden)
 
         botanist2 = WorkingGardener(name='MrJones2')
         person2 = WorkingGardener(name='me2', instructor=botanist2)
@@ -66,27 +71,55 @@ class PynchTestSuite(unittest.TestCase):
 
     def test_complex_pk(self):
         class BasePkModel(Model):
-            _meta = {'database': DB(name='complexpk')}
+            _meta = {'database': DB(name='complexpk'),
+                     'write_concern': 0}
 
-        class CompoundPkModel(BasePkModel):
-            _id = DictField({'a': StringField(),
-                             'b': StringField()}, primary_key=True)
+        class DictModel(BasePkModel):
+            my_doc = DictField({'a': StringField(), 'c': IntegerField()}, primary_key=True)
 
-        document1 = CompoundPkModel(_id={'a': 'key a', 'b': 'key b'})
-        document2 = CompoundPkModel(_id={'b': 'a'})
+        dict_doc = DictModel(my_doc={'a': 'b', 'c': 4})
+        dict_doc.save()
+
+        class CompoundModel(BasePkModel):
+            _id = EmbeddedDocumentField(
+                {'a': StringField(), 'b': StringField()}, primary_key=True)
+
+        document1 = CompoundModel(_id={'a': 'key a', 'b': 'key b'})
+        document2 = CompoundModel(_id={'b': 'a', 'a': 'b'})
         document1.save()
         document2.save()
+        test = CompoundModel.pynch.get(_id=document2.pk.to_mongo())
+        self.assertEquals(test.pk.to_mongo(), document2.pk.to_mongo())
+        self.assertEquals(test, document2)
 
         class A(BasePkModel):
-            pass
+            xx = StringField()
 
-        class CompositePkModel(BasePkModel):
-            _id = DictField({'a': ReferenceField(A),
-                             'b': StringField()}, primary_key=True)
+            def __str__(self):
+                return self.xx
 
-        b = B(_id={'a': A(), 'b': 'key b'})
-        b.save()
-        # import pdb; pdb.set_trace();
+        class PK(BasePkModel):
+            field1 = ReferenceField(A)
+            field2 = FloatField()
+
+        class CompositeModel(BasePkModel):
+            my_doc = ComplexPrimaryKey(PK, primary_key=True)
+            name = StringField()
+
+        my_doc = PK(field1=A(xx='0.27'), field2=2.0)
+        document = CompositeModel(my_doc=my_doc, name='hello')
+        document.save()
+        x = CompositeModel.pynch.get(_id=document.pk.to_mongo())
+        self.assertEquals(x.pk, document.pk)
+        y = CompositeModel.pynch.get(_id=x.pk.to_mongo())
+        self.assertEquals(x, y)
+        z = CompositeModel.pynch.get(_id=y.pk.to_mongo())
+        self.assertEquals(y, z)
+        document.pk.field2 = 500.0
+        document.save()
+        w = CompositeModel.pynch.get(_id=document.pk.to_mongo())
+        self.assertEquals(w, document)
+        self.assertEquals(w.pk.field2, 500.0)
 
     def test_no_pk(self):
         pass
@@ -404,7 +437,7 @@ class SearchTestSuite(unittest.TestCase):
             b.c = [C(field1=1.0, field2=1.2),
                    C(field1=1.0, field2=1.2)]
 
-        self.assertEquals([1.0] * 6, [x for x in a.search('b.c.field1')])
+        self.assertEquals([1.0] * 6, [x for x in search(a, 'b.c.field1')])
 
 if __name__ == '__main__':
     unittest.main()

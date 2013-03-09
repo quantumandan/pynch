@@ -1,8 +1,134 @@
-from pynch.errors import FieldTypeException, DelegationException, ValidationException
-from pynch.util.misc import import_class
-from pynch.base import Field
+from pynch.errors import *
 from bson.dbref import DBRef
 import re
+import inspect
+from pynch.util import import_class
+from bson.objectid import ObjectId
+
+
+class Field(object):
+    BASE_TYPES = (basestring, int, float, bool, long)
+
+    def __new__(cls, *args, **modifiers):
+        """
+        Necessary so that reference fields can import and
+        bind the correct classes when their models' reside
+        in a module being run as a script (ie in the unittests)
+        """
+        field = super(Field, cls).__new__(cls)
+        frame = inspect.stack()[-1][0]  # outermost frame
+        field._context = frame.f_locals.get('__name__', '')
+        del frame
+        return field
+
+    def __init__(self, db_field=None, required=False, default=None,
+                 unique=False, unique_with=None, primary_key=False,
+                 choices=None, help_text=None, *args, **kwargs):
+        """
+        Base class for all field types. Fields are descriptors that
+        manage the validation and typing of a document's attributes.
+
+        Fields marked as a primary key will take precedence over any
+        `_id` field set on the document.
+        """
+        # primary keys are required
+        self.db_field = db_field if not primary_key else '_id'
+        self.required = required if not primary_key else True
+        self.primary_key = primary_key
+        # default's get called when no corresponding attr exists
+        # in the document's __dict__
+        self.default = default
+        # caution, marking a lot of fields as unique will cause
+        # you to take a performance hit when validating
+        self.unique = unique if unique else primary_key
+        # since unique_with can be either a string or a list
+        # of strings, we must check and convert as needed
+        self.unique_with = unique_with if unique_with else []
+        self.choices = choices
+        self.help_text = help_text
+
+    def set(self, name, model):
+        """
+        Normally called by a model's metaclass at the time fields are
+        being attached.  In subclasses, takes care of rebinding references.
+        """
+        self.name = name
+        self.model = model
+
+    def is_set(self):
+        return hasattr(self, 'name') and hasattr(self, 'model')
+
+    def is_dynamic(self):
+        return isinstance(self.field, DynamicField)
+
+    def get_field_value_or_default(self, document):
+        # must convert KeyErrors to AttributeErrors
+        try:
+            return document.__dict__[self.name]
+        except KeyError:
+            if self.default is not None:
+                return self.default
+            raise AttributeError
+
+    def __get__(self, document, model=None):
+        # return field instance if accessed through the class
+        if document is None:
+            return self
+        # converts KeyErrors to AttributeErrors in the event
+        # that the value is not found in the document and the
+        # default is None
+        return self.get_field_value_or_default(document)
+
+    def __set__(self, document, value):
+        document.__dict__[self.name] = self.validate(value)
+
+    def __delete__(self, document):
+        # convert KeyErrors to AttributeErrors
+        try:
+            del document.__dict__[self.name]
+        except KeyError:
+            raise AttributeError
+
+    def __str__(self):
+        field_unset_msg = '<%s %s field object (not set)>' % (type(self), id(self))
+        return getattr(self, 'name', field_unset_msg)
+
+    def to_save(self, value):
+        raise DelegationException('Define in a subclass')
+
+    def to_python(self, value):
+        raise DelegationException('Define in a subclass')
+
+    def validate(self, value):
+        raise DelegationException('Define in a subclass')
+
+
+class FieldProxy(property):
+    """
+    Is used to add "computed" fields to a document instance.
+    To use, define a getter and a setter, and any additional
+    attributes you'd like the proxy to have.
+    """
+    def __init__(self, fget=None, fset=None,
+                 fdel=None, doc=None, field=None, **kwargs):
+        property.__init__(self, fget, fset, fdel, doc)
+        self.__dict__['_field'] = field if \
+            isinstance(field, Field) else SimpleField(**kwargs)
+
+    def __getattr__(self, key, default=None):
+        return getattr(self._field, key, default)
+
+    def set(self, name, model):
+        self._field.set(name, model)
+
+    def to_python(self, value):
+        return self._field.to_python(value)
+
+    def validate(self, value):
+        return self._field.validate(value)
+
+    def to_save(self, value):
+        return self._field.to_save(value)
 
 
 class DynamicField(Field):
@@ -20,6 +146,11 @@ class DynamicField(Field):
     def to_save(self, value):
         return value
 
+    def to_python(self, value):
+        return value
+
+    to_mongo = to_save
+
 
 class SimpleField(Field):
     """
@@ -28,13 +159,16 @@ class SimpleField(Field):
 
     TODO: PY3 compatibility for simple types.
     """
-    BASE_TYPES = (basestring, int, float, bool, long)
-
     def validate(self, data):
         return data
 
     def to_save(self, value):
         return value
+
+    def to_python(self, value):
+        return value
+
+    to_mongo = to_save
 
 
 class ComplexField(Field):
@@ -78,105 +212,14 @@ class ComplexField(Field):
     def to_save(self, value):
         return value
 
-    def is_dynamic(self):
-        return isinstance(self.field, DynamicField)
+    to_mongo = to_save
 
     def validate(self, data):
         raise DelegationException('Define in a subclass')
 
     def _to_python_caller(self, x):
-        basetypes = SimpleField.BASE_TYPES
+        basetypes = Field.BASE_TYPES
         return x if isinstance(x, basetypes) else self.field.to_python(x)
-
-
-class ListField(ComplexField):
-    """
-    All normal list operations are available. Note that order is preserved.
-    """
-    def __set__(self, document, value):
-        if not isinstance(value, list):
-            raise FieldTypeException(type(value), list)
-        super(ListField, self).__set__(document, value)
-
-    def to_save(self, lst):
-        lst = lst if lst else []
-        to_save = self.field.to_save             # optimization
-        X = [to_save(x) for x in lst]
-        return super(ListField, self).to_save(X)
-
-    def to_python(self, lst):
-        if lst is not None:
-            pc = self._to_python_caller          # optimization
-            return [pc(x) for x in lst]
-
-    def validate(self, lst):
-        if lst is not None:
-            validate = self.field.validate       # optimization
-            return [validate(x) for x in lst]
-
-
-class DictField(ComplexField):
-    """
-    Almost identical to a ListField. All normal dict operations
-    are available. Unlike other ComplexFields, a DictField can
-    be used as a primary key, to be used as compound pk's.
-
-    class DynamicCompoundPkModel(Model):
-        _id = DictField(primary_key=True)
-
-    class TypedCompoundPkModel(Model):
-        name = DictField({'first_name':StringField(),
-                          'last_name':StringField()}, primary_key=True)
-    """
-    def __set__(self, document, value):
-        if not isinstance(value, dict):
-            raise FieldTypeException(type(value), dict)
-        super(DictField, self).__set__(document, value)
-
-    def to_save(self, dct):
-        dct = dct if dct else {}
-        X = dict((k, self.field[k].to_save(v)) for k, v in dct.items())
-        return super(DictField, self).to_save(X)
-
-    def to_python(self, dct):
-        if dct is not None:
-            pc = self._to_python_caller          # optimization
-            return dict((k, pc(k, v)) for k, v in dct.items())
-
-    def validate(self, dct):
-        if dct is not None:
-            return dict((k, self.field[k].validate(v)) for k, v in dct.items())
-
-    def _to_python_caller(self, k, x):
-        basetypes = SimpleField.BASE_TYPES
-        return x if isinstance(x, basetypes) else self.field[k].to_python(x)
-
-
-class SetField(ComplexField):
-    def __init__(self, field=None, disjoint_with=None, **modifiers):
-        self.disjoint_with = disjoint_with
-        super(SetField, self).__init__(**modifiers)
-
-    def __set__(self, document, value):
-        if not isinstance(value, set):
-            raise FieldTypeException(type(value), set)
-        super(SetField, self).__set__(document, value)
-
-    def to_save(self, S):
-        S = S if S else set()
-        to_save = self.field.to_save             # optimization
-        X = [to_save(x) for x in S]
-        return super(SetField, self).to_save(X)
-
-    def to_python(self, lst):
-        if lst is not None:
-            pc = self._to_python_caller          # optimization
-            return set(pc(s) for s in lst)
-
-    def validate(self, iterable):
-        if iterable is not None:
-            validate = self.field.validate       # optimization
-            return [validate(s) for s in iterable]
 
 
 class DocumentField(Field):
@@ -222,6 +265,110 @@ class DocumentField(Field):
         return value
 
 
+class ListField(ComplexField):
+    """
+    All normal list operations are available. Note that order is preserved.
+    """
+    def __set__(self, document, value):
+        if not isinstance(value, list):
+            raise FieldTypeException(type(value), list)
+        super(ListField, self).__set__(document, value)
+
+    def to_save(self, lst):
+        lst = lst if lst else []
+        to_save = self.field.to_save             # optimization
+        X = [to_save(x) for x in lst]
+        return super(ListField, self).to_save(X)
+
+    def to_python(self, lst):
+        if lst is not None:
+            pc = self._to_python_caller          # optimization
+            return [pc(x) for x in lst]
+
+    def validate(self, lst):
+        if lst is not None:
+            validate = self.field.validate       # optimization
+            return [validate(x) for x in lst]
+
+    to_mongo = to_save
+
+
+class DictField(ComplexField):
+    """
+    Almost identical to a ListField. All normal dict operations
+    are available. Unlike other ComplexFields, a DictField can
+    be used as a primary key, to be used as compound pk's.
+
+    class DynamicDictModel(Model):
+        things = DictField()
+
+    names = {'first_name': StringField(),
+             'last_name': StringField()}
+
+    class TypedDictModel(Model):
+        fullname = DictField(names)
+
+    """
+    def set(self, name, model):
+        for subfieldname, subfield in self.field.items():
+            subfield.set(subfieldname, model)
+        super(DictField, self).set(name, model)
+
+    def __set__(self, document, value):
+        if not isinstance(value, dict):
+            raise FieldTypeException(type(value), dict)
+        super(DictField, self).__set__(document, value)
+
+    def to_save(self, dct):
+        dct = dct if dct else {}
+        X = dict((k, self.field[k].to_save(v)) for k, v in dct.items())
+        return super(DictField, self).to_save(X)
+
+    def to_python(self, dct):
+        if dct is not None:
+            pc = self._to_python_caller          # optimization
+            return dict((k, pc(k, v)) for k, v in dct.items())
+
+    def validate(self, dct):
+        if dct is not None:
+            return dict((k, self.field[k].validate(v)) for k, v in dct.items())
+
+    def _to_python_caller(self, k, x):
+        basetypes = SimpleField.BASE_TYPES
+        return x if isinstance(x, basetypes) else self.field[k].to_python(x)
+
+    to_mongo = to_save
+
+
+class SetField(ComplexField):
+    def __init__(self, field=None, disjoint_with=None, **modifiers):
+        self.disjoint_with = disjoint_with
+        super(SetField, self).__init__(**modifiers)
+
+    def __set__(self, document, value):
+        if not isinstance(value, set):
+            raise FieldTypeException(type(value), set)
+        super(SetField, self).__set__(document, value)
+
+    def to_save(self, S):
+        S = S if S else set()
+        to_save = self.field.to_save             # optimization
+        X = [to_save(x) for x in S]
+        return super(SetField, self).to_save(X)
+
+    def to_python(self, lst):
+        if lst is not None:
+            pc = self._to_python_caller          # optimization
+            return set(pc(s) for s in lst)
+
+    def validate(self, iterable):
+        if iterable is not None:
+            validate = self.field.validate       # optimization
+            return [validate(s) for s in iterable]
+
+    to_mongo = to_save
+
+
 class ReferenceField(DocumentField):
     def rebind(self):
         super(ReferenceField, self).rebind()
@@ -229,19 +376,23 @@ class ReferenceField(DocumentField):
         if not isinstance(self.reference, basestring):
             self.reference.pynch.backrefs[self] = self.model
 
-    def to_save(self, document):
+    def to_mongo(self, document):
         # notice that `ReferenceField.to_save` does not call
-        # base class's `to_save`
+        # base class's `to_mongo`
         if document is not None:
-            # need to validate document first to preserve atomicity
-            # during cascading saves
-            document.save()
             # get all the info needed to point the reference to
             # the correct database
             name, host, port = self.reference._meta['database']
             # turns the document into a DBRef
             return DBRef(self.reference.__name__, document.pk,
                          database=name, host=host, port=port)
+        # in this case, document will be None
+        return None
+
+    def to_save(self, document):
+        if document is not None:
+            document.save()
+            return self.to_mongo(document)
         # in this case, document will be None
         return None
 
@@ -261,13 +412,89 @@ class ReferenceField(DocumentField):
 
 
 class EmbeddedDocumentField(DocumentField):
+    """
+    Consider using DictFields or ComplexPrimaryKey fields when
+    implmenting compound and composite primary keys, if you need
+    really complex behavior, then you can use embeded documents.
+
+    class CompoundKeyModel(Model):
+        my_doc = EmbeddedDocumentField({'a': StringField(),
+                                        'b': StringField()})
+    document = CompoundKeyModel(my_doc={'a': 'hello', 'b': 'world'})
+
+    A composite key may contain any grouping of relationships.
+    class A(Model):
+        ...
+    class CompositeKeyModel(Model):
+        my_doc = EmbeddedDocumentField({'a': ReferenceField(A),
+                                        'b': StringField()})
+    document = CompositeKeyModel()
+
+    If you are going to be using EmbeddedDocumentField fields as
+    primary keys, consider using, instead, a ComplexPrimaryKey,
+    which can be used to implement compound and composite primary
+    keys (remember subclasses of DictField don't have `_id`s when
+    used as pk's, which is a space optimization)
+
+    Alternatively, you can specify a document class if you'd rather
+    have a specific kind of document, as opposed to inlining with a
+    dictionary.
+
+    class EmbeddedDocumentModel(Model):
+        my_doc = EmbeddedDocumentField(A)
+
+    A dynamically typed EmbeddedDocumentField takes no `reference` argument
+
+    class AnonymousModel(Model):
+        my_doc = EmbeddedDocumentField()
+    """
+    def __init__(self, reference=None, **kwargs):
+        # avoid a circular import
+        from pynch.base import ModelMetaclass, Model
+
+        # dynamically attaches attributes to `ComplexKeyModel`
+        class AnonymousDocumentMetaclass(ModelMetaclass):
+            def __new__(meta, name, bases, attrs):
+                if isinstance(reference, dict):
+                    attrs.update(reference)
+                return ModelMetaclass.__new__(meta, name, bases, attrs)
+
+            def __init__(model, name, bases, attrs):
+                # initialize fields if necessary
+                if isinstance(reference, dict):
+                    for name, field in reference.items():
+                        field.set(name, model)
+                ModelMetaclass.__init__(model, name, bases, attrs)
+
+        # just a marker class
+        class AnonymousDocument(Model):
+            __metaclass__ = AnonymousDocumentMetaclass
+
+            # don't do save -- we want to embed this class'
+            # mongo value, not create a separate instance
+            def save(self):
+                return self
+
+        # if reference is a class, use it, otherwise default
+        # to `AnonymousDocument`
+        reference = AnonymousDocument if \
+                isinstance(reference, dict) else reference
+        # initialize
+        super(EmbeddedDocumentField, self).__init__(reference, **kwargs)
+
+    def __set__(self, document, value):
+        document.__dict__[self.name] = value if \
+            isinstance(value, self.reference) else self.reference(**value)
+
     def to_save(self, document):
         if document is not None:
-            return document.save()
+            return document.to_mongo()
         return None
 
+    to_mongo = to_save
+
     def to_python(self, document):
-        if document:
+        if document is not None:
             return self.reference.to_python(document)
         return None
 
@@ -276,13 +503,45 @@ class EmbeddedDocumentField(DocumentField):
         return value.validate()
 
 
+class ComplexPrimaryKey(DictField):
+    def set(self, name, model):
+        """
+        Automatically sets the field's `required` parameter to True
+        as it defeats the purpose of a compund or composite key that
+        is missing parts
+        """
+        self.required = True
+        self.primary_key = True
+
+        for field in model.pynch.fields:
+            field.required = True
+
+        super(ComplexPrimaryKey, self).set(name, model)
+
+
+class PrimaryKey(FieldProxy):
+    def __init__(self, **kwargs):
+        kwargs['primary_key'] = True
+        kwargs['unique'] = True
+
+        # define getters and setters
+        def get_ID(doc):
+            return doc.__dict__.setdefault('_id', ObjectId())
+
+        def set_ID(doc, value):
+            doc.__dict__['_id'] = value
+
+        super(PrimaryKey, self).__init__(get_ID, set_ID, **kwargs)
+
+
 class StringField(SimpleField):
     def __init__(self, max_length=None, **params):
         self.max_length = max_length
         super(StringField, self).__init__(**params)
 
     def to_save(self, value):
-        value = unicode(value) if value is not None else value
+        if value is not None:
+            value = unicode(value)
         return super(StringField, self).to_save(value)
 
     def to_python(self, value):
@@ -294,12 +553,12 @@ class StringField(SimpleField):
 
         exceeds_length = len(value) > self.max_length \
                                 if self.max_length else False
-
         if exceeds_length:
             raise ValidationException(
                 '%s exceeds the maximum number of characters' % self.name)
-
         return value
+
+    to_mongo = to_save
 
 
 class IntegerField(SimpleField):
@@ -327,8 +586,9 @@ class IntegerField(SimpleField):
             if self.max_value and value > self.max_value:
                 raise ValidationException(
                     '%s is greater than the maximum allowed value' % self.name)
-
         return value
+
+    to_mongo = to_save
 
 
 class FloatField(SimpleField):
@@ -356,8 +616,9 @@ class FloatField(SimpleField):
             if self.max_value and value > self.max_value:
                 raise ValidationException(
                     '%s is greater than the maximum allowed value' % self.name)
-
         return value
+
+    to_mongo = to_save
 
 
 class BooleanField(SimpleField):
@@ -372,6 +633,8 @@ class BooleanField(SimpleField):
         if not isinstance(value, bool) and value is not None:
             raise FieldTypeException(type(value), bool)
         return value
+
+    to_mongo = to_save
 
 
 email_regex = \
@@ -427,3 +690,81 @@ class GeoPointField(SimpleField):
 
 class UUIDField(SimpleField):
     pass
+
+
+def check_required(field, document):
+    if field.required:
+        # a required field with a None value is not valid
+        # anyway so fail the check if the attribute is
+        # either not there or is None
+        if getattr(document, field.name, None) is None:
+            raise ValidationException('%s is required' % field.name)
+        return True
+
+
+def check_choices(field, document):
+    if field.choices is None or \
+        getattr(document, field.name, None) in field.choices:
+        return True
+    raise ValidationException(
+        '%s is not one of %s' % (field.name, field.choices))
+
+
+def check_unique_with(field, document):
+    # just because a model declares a field doesn't mean
+    # the corresponding document will have that attribute
+    unique_value = getattr(document, field.name, None)
+
+    # if the unique_value is None then the attribute hasn't
+    # been set on the document so there is nothing to check
+    if unique_value is None:
+        return True
+
+    unique_with = field.unique_with
+
+    # since unique_with can be either a string or a list
+    # of strings, we must check and convert as needed
+    unique_with = unique_with if \
+            isinstance(unique_with, list) else [unique_with]
+
+    for unique_field_name in unique_with:
+        # just because a model declares a field doesn't mean
+        # the corresponding document will have that attribute
+        document_value = getattr(document, unique_field_name, None)
+
+        # if the document_value is None then the attribute hasn't
+        # been set on the document
+        if document_value is None:
+            continue
+
+        if document_value == unique_value:
+            raise ValidationException(
+                '%s is not unique with field %s' % \
+                        (field.name, unique_field_name))
+    return True
+
+
+def check_fields(document):
+    """
+    Validate the fields, if a failure occurs then yield
+    a tuple containing the field name and exception
+    """
+    # validate the fields' relationships to each other
+    for field in document.pynch.fields:
+        try:
+            check_required(field, document)
+        except ValidationException as e:
+            yield (field.name, e)
+        try:
+            check_choices(field, document)
+        except ValidationException as e:
+            yield (field.name, e)
+        try:
+            check_unique_with(field, document)
+        except ValidationException as e:
+            yield (field.name, e)
+        try:
+            value = getattr(document, field.name, None)
+            field.validate(value)
+        except ValidationException as e:
+            yield (field.name, e)
