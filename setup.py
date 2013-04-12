@@ -5,4 +5,5 @@ setup(name='pynch',
       description='Pythonic orm for mongodb',
       author='Dan Cohn',
       author_email='daniel.spencer.cohn@gmail.com',
+      packages=['pynch', 'distutils.command']
      )
