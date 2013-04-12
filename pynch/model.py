@@ -1,5 +1,4 @@
 from pynch.db import DB
-from bson.objectid import ObjectId
 from pynch.errors import InheritanceException, DocumentValidationException
 from pynch.util import MultiDict
 from pynch.fields import (Field, FieldProxy, PrimaryKey, check_fields)
@@ -17,7 +16,7 @@ class ModelMetaclass(type):
 
         # default _meta
         _meta = {'index': [], 'max_size': 10000000, 'database': DB(),
-                 'write_concern': 1, 'index': [], 'auto_index': False}
+                 'write_concern': 1, 'auto_index': False}
 
         # pull out _meta modifier, then merge with that of current class
         _meta.update(base_attrs.pop('_meta', {}))
@@ -47,7 +46,7 @@ class ModelMetaclass(type):
 
                 # fields named `_id` are automatically indexed by
                 # mongo, so skip them
-                if fieldname != '_id' and _meta['auto_index']:
+                if fieldname != '_id' and namespace['_meta']['auto_index']:
                     model.pynch.collection.create_index(
                             field.db_field or fieldname, unique=field.unique)
 
@@ -56,7 +55,7 @@ class ModelMetaclass(type):
                 field.set(fieldname, model)
 
         if model.pynch.primary_key_field is None:
-            model._id = PrimaryKey(db_field='_id')
+            model._id = PrimaryKey()
             model._id.set('_id', model)
             model.pynch.primary_key_field = model._id
         return model
@@ -147,11 +146,11 @@ class Model(object):
 
     def to_mongo(self):
         # returns tuples with value (field name, mongo value)
-        def field_to_save_tuple(field):
+        def field_to_mongo_tuple(field):
             attr = getattr(self, field.name, None)
-            return (field.db_field or field.name, field.to_save(attr))
+            return (field.db_field or field.name, field.to_mongo(attr))
         # collect mongo tuples into a dictionary
-        mongo = dict(field_to_save_tuple(field) \
+        mongo = dict(field_to_mongo_tuple(field) \
                                 for field in self.pynch.fields)
         return mongo
 
@@ -182,9 +181,6 @@ class Model(object):
                 # not the same as the field value being set
                 attr = getattr(self, field.name, None)
                 yield (field.db_field or field.name, field.to_save(attr))
-                # save the attribute if its a document
-                if isinstance(attr, Model):
-                    attr.save()
 
         # build a mongo compatible dictionary
         mongo = dict(do_save())

@@ -81,15 +81,15 @@ class PynchTestSuite(unittest.TestCase):
         dict_doc.save()
 
         class CompoundModel(BasePkModel):
-            _id = EmbeddedDocumentField(
-                {'a': StringField(), 'b': StringField()}, primary_key=True)
+            _id = EmbeddedDocumentField(DictModel, primary_key=True)
 
-        document1 = CompoundModel(_id={'a': 'key a', 'b': 'key b'})
-        document2 = CompoundModel(_id={'b': 'a', 'a': 'b'})
+        document1 = CompoundModel(_id=DictModel(my_doc={'a': 'key a', 'c': 3}))
+        document2 = CompoundModel(_id=DictModel(my_doc={u'c': 2, u'a': u'b'}))
         document1.save()
         document2.save()
         test = CompoundModel.pynch.get(_id=document2.pk.to_mongo())
         self.assertEquals(test.pk.to_mongo(), document2.pk.to_mongo())
+        # import pdb; pdb.set_trace();
         self.assertEquals(test, document2)
 
         class A(BasePkModel):

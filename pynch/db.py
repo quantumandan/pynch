@@ -1,10 +1,10 @@
 from collections import namedtuple
 
 
-_DB_tuple = namedtuple('DB', 'name host port')
+# _DB_tuple = namedtuple('DB', 'name host port')
 
 
-class DB(_DB_tuple):
+class DB(namedtuple('DB', 'name host port')):
     def __new__(cls, *args, **kwargs):
         if not args:
             args += (kwargs.pop('name', ''),)

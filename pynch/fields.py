@@ -312,7 +312,7 @@ class DictField(ComplexField):
     """
     Almost identical to a ListField. All normal dict operations
     are available. Unlike other ComplexFields, a DictField can
-    be used as a primary key, to be used as compound pk's.
+    be marked as a primary key, to be used as compound pk's.
 
     class DynamicDictModel(Model):
         things = DictField()
@@ -427,80 +427,6 @@ class ReferenceField(DocumentField):
 
 
 class EmbeddedDocumentField(DocumentField):
-    """
-    Consider using DictFields or ComplexPrimaryKey fields when
-    implmenting compound and composite primary keys, if you need
-    really complex behavior, then you can use embeded documents.
-
-    class CompoundKeyModel(Model):
-        my_doc = EmbeddedDocumentField({'a': StringField(),
-                                        'b': StringField()})
-    document = CompoundKeyModel(my_doc={'a': 'hello', 'b': 'world'})
-
-    A composite key may contain any grouping of relationships.
-    class A(Model):
-        ...
-    class CompositeKeyModel(Model):
-        my_doc = EmbeddedDocumentField({'a': ReferenceField(A),
-                                        'b': StringField()})
-    document = CompositeKeyModel()
-
-    If you are going to be using EmbeddedDocumentField fields as
-    primary keys, consider using, instead, a ComplexPrimaryKey,
-    which can be used to implement compound and composite primary
-    keys (remember subclasses of DictField don't have `_id`s when
-    used as pk's, which is a space optimization)
-
-    Alternatively, you can specify a document class if you'd rather
-    have a specific kind of document, as opposed to inlining with a
-    dictionary.
-
-    class EmbeddedDocumentModel(Model):
-        my_doc = EmbeddedDocumentField(A)
-
-    A dynamically typed EmbeddedDocumentField takes no `reference` argument
-
-    class AnonymousModel(Model):
-        my_doc = EmbeddedDocumentField()
-    """
-    def __init__(self, reference=None, **kwargs):
-        # avoid a circular import
-        from pynch.base import ModelMetaclass, Model
-
-        # dynamically attaches attributes to `ComplexKeyModel`
-        class AnonymousDocumentMetaclass(ModelMetaclass):
-            def __new__(meta, name, bases, attrs):
-                if isinstance(reference, dict):
-                    attrs.update(reference)
-                return ModelMetaclass.__new__(meta, name, bases, attrs)
-
-            def __init__(model, name, bases, attrs):
-                # initialize fields if necessary
-                if isinstance(reference, dict):
-                    for name, field in reference.items():
-                        field.set(name, model)
-                ModelMetaclass.__init__(model, name, bases, attrs)
-
-        # just a marker class
-        class AnonymousDocument(Model):
-            __metaclass__ = AnonymousDocumentMetaclass
-
-            # don't do save -- we want to embed this class'
-            # mongo value, not create a separate instance
-            def save(self):
-                return self
-
-        # if reference is a class, use it, otherwise default
-        # to `AnonymousDocument`
-        reference = AnonymousDocument if \
-                isinstance(reference, dict) else reference
-        # initialize
-        super(EmbeddedDocumentField, self).__init__(reference, **kwargs)
-
-    def __set__(self, document, value):
-        document.__dict__[self.name] = value if \
-            isinstance(value, self.reference) else self.reference(**value)
-
     def to_save(self, document):
         if document is not None:
             return document.to_mongo()
@@ -514,7 +440,6 @@ class EmbeddedDocumentField(DocumentField):
         return None
 
     def validate(self, value):
-        super(EmbeddedDocumentField, self).validate(value)
         return value.validate()
 
 
@@ -531,18 +456,20 @@ class PrimaryKey(SimpleField):
 
 
 class ComplexPrimaryKey(DictField):
+    def __init__(self, **kwargs):
+        kwargs['primary_key'] = True
+        kwargs['unique'] = True
+        kwargs['required'] = True
+        super(PrimaryKey, self).__init__(**kwargs)
+
     def set(self, name, model):
         """
         Automatically sets the field's `required` parameter to True
         as it defeats the purpose of a compund or composite key that
         is missing parts
         """
-        self.required = True
-        self.primary_key = True
-
         for field in model.pynch.fields:
             field.required = True
-
         super(ComplexPrimaryKey, self).set(name, model)
 
 
