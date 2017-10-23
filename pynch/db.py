@@ -1,9 +1,6 @@
 from collections import namedtuple
 
 
-# _DB_tuple = namedtuple('DB', 'name host port')
-
-
 class DB(namedtuple('DB', 'name host port')):
     def __new__(cls, *args, **kwargs):
         if not args:

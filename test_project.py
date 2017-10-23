@@ -6,23 +6,26 @@ from pynch.errors import *
 
 class Base(Model):
     _meta = {'database': settings['Base_db']}
+    _id = PrimaryKey()
 
 
 class Person(Base):
-    name = StringField(required=True, primary_key=True)
+    name = StringField(required=True)
 
     def __str__(self):
         return self.name
 
 
 class Bug(Base):
+    _id = PrimaryKey()
     munched = ListField(ReferenceField('Flower'))
     number_eyes = IntegerField()
     number_legs = IntegerField()
 
 
 class Flower(Base):
-    name = StringField(primary_key=True)
+    _id = PrimaryKey()
+    name = StringField()
 
     def __str__(self):
         return self.name
@@ -30,8 +33,9 @@ class Flower(Base):
 
 class Gardener(Person):
     _meta = {'database': settings['Gardener_db']}
-    instructor = ReferenceField('BugStomper')
-    # instructor = ReferenceField('self')
+    _id = PrimaryKey()
+    # instructor = ReferenceField('BugStomper')
+    instructor = ReferenceField('Gardener')
     picked = SetField(ReferenceField(Flower))
     planted = SetField(ReferenceField(Flower), disjoint_with='picked')
 

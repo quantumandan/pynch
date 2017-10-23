@@ -4,7 +4,7 @@ import pymongo
 import weakref
 from pynch.util import dir_
 from pynch.errors import ConnectionException, QueryException
-from pynch.fields import Field, FieldProxy
+from pynch.fields import Field
 
 
 class InformationDescriptor(object):
@@ -69,7 +69,7 @@ class InformationDescriptor(object):
     @property
     def fields(self):
         values = dir_(self.model).values()
-        return [v for v in values if isinstance(v, (Field, FieldProxy))]
+        return tuple(v for v in values if isinstance(v, Field))
 
     def _raw_find(self, dictionary):
         for fieldname in dictionary.keys():

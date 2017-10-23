@@ -1,7 +1,7 @@
 from pynch.db import DB
 from pynch.errors import InheritanceException, DocumentValidationException
 from pynch.util import MultiDict
-from pynch.fields import (Field, FieldProxy, PrimaryKey, check_fields)
+from pynch.fields import Field, PrimaryKey, check_fields
 from pynch.info import InformationDescriptor
 
 
@@ -11,8 +11,14 @@ class ModelMetaclass(type):
             raise InheritanceException(
                 'Multiple inheritance not allowed')
 
-        # convert dictproxy to a dict
-        base_attrs = dict(bases[0].__dict__)
+        # convert mappingproxy to a dict
+        try:
+            # note that `bases` can be empty and yet produce "new"-style classes
+            # ala py2.X ... the curse of new vs old style classes lives on, but
+            # now in metaclass land.
+            base_attrs = dict(bases[0].__dict__)
+        except IndexError:
+            base_attrs = dict(object.__dict__)
 
         # default _meta
         _meta = {'index': [], 'max_size': 10000000, 'database': DB(),
@@ -38,7 +44,7 @@ class ModelMetaclass(type):
         model.pynch = InformationDescriptor(model)
 
         for fieldname, field in namespace.items():
-            if isinstance(field, (Field, FieldProxy)):
+            if isinstance(field, Field):
                 # save a reference to the primary key field on
                 # the descriptor
                 if field.primary_key or fieldname == '_id':
@@ -61,15 +67,15 @@ class ModelMetaclass(type):
         return model
 
 
-class Model(object):
+class Model(metaclass=ModelMetaclass):
     """
     For simplicity we disallow multiple inheritance among Models.
 
     Notice, that a subclass's _meta attribute inherits from its
     bases.  In other words, _meta attributes "stack".
-    """
-    __metaclass__ = ModelMetaclass
 
+    Can upcast or downcast types but type enforcement is weak atm
+    """
     def __init__(self, *castable, **values):
         super(Model, self).__init__()
 

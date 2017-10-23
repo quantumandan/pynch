@@ -1,13 +1,13 @@
 from pynch.errors import *
 from bson.dbref import DBRef
+from bson.objectid import ObjectId
 import re
 import inspect
 from pynch.util import import_class
-from bson.objectid import ObjectId
 
 
 class Field(object):
-    BASE_TYPES = (basestring, int, float, bool, long)
+    BASE_TYPES = (str, int, float, bool)
 
     def __new__(cls, *args, **modifiers):
         """
@@ -15,7 +15,10 @@ class Field(object):
         bind the correct classes when their models' reside
         in a module being run as a script (ie in the unittests)
         """
-        field = super(Field, cls).__new__(cls)
+        # TODO revamp rebinding to use the py3.X __qualname__ flag
+        # which will make code more performant (ie none of this
+        # frame introspection BS)
+        field = super().__new__(cls)
         frame = inspect.stack()[-1][0]  # outermost frame
         field._context = frame.f_locals.get('__name__', '')
         del frame
@@ -103,49 +106,6 @@ class Field(object):
         raise DelegationException('Define in a subclass')
 
 
-class FieldProxy(property):
-    """
-    Is used to add "computed" fields to a document instance.
-    To use, define a getter and a setter, and any additional
-    attributes you'd like the proxy to have. An example of
-    how you could make a fake pk is:
-
-    class PK(FieldProxy):
-    def __init__(self, **kwargs):
-        kwargs['primary_key'] = True
-        kwargs['unique'] = True
-
-        # define getters and setters
-        def get_ID(doc):
-            return doc.__dict__.setdefault('_id', ObjectId())
-
-        def set_ID(doc, value):
-            doc.__dict__['_id'] = value
-
-        super(PK, self).__init__(get_ID, set_ID, **kwargs)
-    """
-    def __init__(self, fget=None, fset=None,
-                 fdel=None, doc=None, field=None, **kwargs):
-        property.__init__(self, fget, fset, fdel, doc)
-        self.__dict__['_field'] = field if \
-            isinstance(field, Field) else SimpleField(**kwargs)
-
-    def __getattr__(self, key, default=None):
-        return getattr(self._field, key, default)
-
-    def set(self, name, model):
-        self._field.set(name, model)
-
-    def to_python(self, value):
-        return self._field.to_python(value)
-
-    def validate(self, value):
-        return self._field.validate(value)
-
-    def to_save(self, value):
-        return self._field.to_save(value)
-
-
 class DynamicField(Field):
     """
     Marker class for fields that can take data of any type.
@@ -216,11 +176,11 @@ class ComplexField(Field):
     def __set__(self, document, value):
         # rebind reference with an actual class
         if isinstance(self.field, DocumentField) and \
-            isinstance(self.field.reference, basestring):
+            isinstance(self.field.reference, str):
             self.field.rebind()
             # if rebinding hasn't succeeded by this point then the
             # reference is invalid
-            if isinstance(self.field.reference, basestring):
+            if isinstance(self.field.reference, str):
                 raise ValidationException('Failed to rebind references')
         super(ComplexField, self).__set__(document, value)
 
@@ -251,7 +211,7 @@ class DocumentField(Field):
         # import path (str) or is 'self', otherwise reference hasn't
         # been read into memory yet, so defer binding until the first
         # time we try and set a value on the field's document
-        if isinstance(self.reference, basestring):
+        if isinstance(self.reference, str):
             name = self.reference
             self.reference = self.model if 'self' == name else \
                     (import_class(name, self._context) or name)
@@ -260,11 +220,11 @@ class DocumentField(Field):
         # rebind reference with an actual class (this handles the
         # case that the reference was not in memory during the first
         # attempt at rebinding)
-        if isinstance(self.reference, basestring):
+        if isinstance(self.reference, str):
             self.rebind()
             # if rebinding hasn't succeeded by this point then the
             # reference is invalid
-            if isinstance(self.reference, basestring):
+            if isinstance(self.reference, str):
                 raise ValidationException('Failed to rebind references')
         # cannot use a subclass or a superclass (types must match)
         if type(value) != self.reference:
@@ -388,7 +348,7 @@ class ReferenceField(DocumentField):
     def rebind(self):
         super(ReferenceField, self).rebind()
         # only add backrefs when the reference has been rebound
-        if not isinstance(self.reference, basestring):
+        if not isinstance(self.reference, str):
             self.reference.pynch.backrefs[self] = self.model
 
     def to_mongo(self, document):
@@ -479,16 +439,14 @@ class StringField(SimpleField):
         super(StringField, self).__init__(**params)
 
     def to_save(self, value):
-        if value is not None:
-            value = unicode(value)
         return super(StringField, self).to_save(value)
 
     def to_python(self, value):
-        return unicode(value)
+        return value
 
     def validate(self, value):
-        if not isinstance(value, basestring) and value is not None:
-            raise FieldTypeException(type(value), basestring)
+        if not isinstance(value, str) and value is not None:
+            raise FieldTypeException(type(value), str)
 
         exceeds_length = len(value) > self.max_length \
                                 if self.max_length else False

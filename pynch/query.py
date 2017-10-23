@@ -5,6 +5,11 @@ class QueryManager(object):
     def __call__(self, **kwargs):
         return self.model.pynch.find(kwargs)
 
+# FIXME -- Search is a legacy artifact for querying deeply
+#          nested document hierarchies w/o indices. Might be
+#          useful in the future (therefore not throwing away
+#          the code) however the functionality is not fully
+#          implemented and a distraction at the moment.
 
 def search(obj, search_term, query_filter=None):
     """
@@ -36,7 +41,7 @@ def search(obj, search_term, query_filter=None):
         yield obj
         raise StopIteration
     # get the field value at the current level
-    obj = [getattr(obj, T)] if not \
+    obj = (getattr(obj, T),) if not \
             isinstance(obj, (list, set)) else (getattr(o, T) for o in obj)
     # in PY3.3 and greater, this is a perfect example
     # of when to use the `yield from` syntax
